@@ -1,0 +1,28 @@
+Target author,Accuracy,F1,TP,FP,FN,TN
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Anonymus,0.8461538461538461,0.0,0,0,2,11
+Anonymus,0.8461538461538461,0.0,0,0,2,11
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Anonymus,0.8461538461538461,0.0,0,0,2,11
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Anonymus,0.8461538461538461,0.0,0,0,2,11
+Albertus Magnus,0.9230769230769231,0.0,0,0,1,12
+Anonymus,0.8461538461538461,0.0,0,0,2,11
+Antonio Pelacani da Parma,1.0,1.0,0,0,0,12
+Bartholomeus de Bononia,1.0,1.0,0,0,0,12
+Cicchus Esculanus,0.9166666666666666,0.0,0,1,0,11
+Girardus Cremonensis,1.0,1.0,1,0,0,12
+Guglielmo di Moerbeke,1.0,1.0,0,0,0,12
+Guido Vernani,0.9230769230769231,0.0,0,0,1,12
+Iohannes De Sacrobosco,1.0,1.0,0,0,0,12
+Iohannes Peckham,1.0,1.0,0,0,0,12
+Kilwardby,1.0,1.0,0,0,0,12
+Michael Scotus,1.0,1.0,0,0,0,12
+Nicole Oresme,0.9230769230769231,0.0,0,0,1,12
+Ptolemaeus Lucensis,1.0,1.0,0,0,0,12
+Robertus Anglicus,1.0,1.0,0,0,0,12
+Robertus Grosseteste,0.9230769230769231,0.0,0,0,1,12
+Thomas De Aquino,1.0,1.0,3,0,0,10
+Tolomeo da Lucca,1.0,1.0,0,0,0,12
