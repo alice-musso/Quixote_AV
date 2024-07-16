@@ -89,7 +89,7 @@ def load_dataset(remove_test=False):
 
     print('Data loaded.\n')
 
-    '''code to remove pattern missing'''
+    '''code to remove patterns'''
     return documents, authors, filenames
 
 
@@ -146,7 +146,7 @@ def data_partitioner(documents, authors, filenames, target, segment=True):
     print('Partitioning data.\n')
 
     X = documents
-    # label encoder per salvare info relative a titoli
+    
     y = [(author, filename.split('-')[1].strip()) for  author, filename in zip(authors, filenames)]
     y = [(1, title) if author.rstrip() == target else (0, title) for author, title in y]
     #y = [1 if author.rstrip() == target else 0 for author in authors]
@@ -228,7 +228,7 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
     X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = data_partitioner(documents, authors, filenames, target=target)
 
     print('Extracting linguistic features. \n')
-    
+
     processor = DocumentProcessor(language_model=nlp)
     processed_docs_dev = processor.process_documents(X_dev, groups_dev)
     processed_docs_test = processor.process_documents(X_test, groups_test)
@@ -250,10 +250,11 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
     function_words_vectorizer = FeaturesFunctionWords(function_words=latin_function_words)
     mendenhall_vectorizer = FeaturesMendenhall(upto=20)
     words_masker = FeaturesDVEX(function_words=latin_function_words)
-    #sentence_len_extractor = FeaturesSentenceLength()
+    sentence_len_extractor = FeaturesSentenceLength()
     POS_vectorizer = FeaturesPOST()
     DEP_vectorizer = FeaturesDEP()
     punct_vectorizer = FeaturesPunctuation()
+    char_extractor = FeaturesCharNGram()
 
 
     vectorizers = [
@@ -262,8 +263,9 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
             POS_vectorizer ,
             mendenhall_vectorizer,
             DEP_vectorizer,
-            #sentence_len_extractor,
-            punct_vectorizer     
+            sentence_len_extractor,
+            punct_vectorizer,
+            char_extractor     
         ]
     
     hstacker = HstackFeatureSet(vectorizers)
@@ -274,7 +276,7 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
 
     for vectorizer in vectorizers:
         #extractor =  FeatureSetReductor(vectorizer)
-        print(vectorizer)
+        print('Extracting',vectorizer)
 
         features_dev = vectorizer.fit_transform(processed_docs_dev)
         feature_sets_dev.append(features_dev)
@@ -293,7 +295,7 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
     X_test_stacked = hstacker._hstack(feature_sets_test)
     X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
 
-    print('Feature vectors extracted')
+    print('\nFeature vectors extracted.\n')
     
     return X_dev_stacked, X_test_stacked, X_test_stacked_frag, y_dev, y_test
 
@@ -342,7 +344,6 @@ def get_scores(clf, X_test, y_test):
 
     print('Confidence scores: \n', proba)
 
-    print('Performance evaluated.\n')
     return acc, f1, cf
 
 
@@ -378,7 +379,7 @@ def build_model(target, save_results=False):
 
     documents, authors, filenames = load_dataset()
 
-    #documents, authors, filenames = documents[:10], authors[:10], filenames[:10]
+    documents, authors, filenames = documents[:10], authors[:10], filenames[:10]
 
     nlp = initialize_language_model(max_length=max([len(document) for document in documents]))
 
@@ -403,5 +404,5 @@ def loop_over_authors():
         build_model(target=author, save_results=True)
 
     
-#build_model(target='Antonio Pelacani da Parma')
-loop_over_authors()
+build_model(target='Albertus Magnus')
+#loop_over_authors()

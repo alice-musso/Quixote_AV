@@ -219,15 +219,18 @@ class FeaturesCharNGram:
         return 'FeaturesCharNGram'
 
     def fit(self, documents, y=None):
-        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n, self.n), use_idf=False, norm=self.norm, min_df=3).fit(documents)
+        raw_documents = [doc.text for doc in documents]
+        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n, self.n), use_idf=False, norm=self.norm, min_df=3).fit(raw_documents)
         return self
 
     def transform(self, documents, y=None):
-        return self.vectorizer.transform(documents)
+        raw_documents = [doc.text for doc in documents]
+        return self.vectorizer.transform(raw_documents)
 
     def fit_transform(self, documents, y=None):
+        raw_documents = [doc.text for doc in documents]
         self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n, self.n), use_idf=False, norm=self.norm, min_df=3)
-        return self.vectorizer.fit_transform(documents)
+        return self.vectorizer.fit_transform(raw_documents)
 
 
 class FeaturesFunctionWords:
@@ -283,7 +286,7 @@ class FeaturesPunctuation:
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
 
-        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3).fit(documents)
+        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3)
         self.vectorizer.fit(raw_documents)
         return self
 
