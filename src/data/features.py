@@ -25,7 +25,7 @@ from string import punctuation
 
 
 class DocumentProcessor:
-    def __init__(self, language_model, savecache='.cache/processed_docs.pkl'):
+    def __init__(self, language_model, savecache='.cache/processed_docs_data.pkl'):
         self.nlp = language_model
         self.savecache = savecache
         self.init_cache()
@@ -46,17 +46,30 @@ class DocumentProcessor:
                 os.makedirs(parent, exist_ok=True)
             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-    def process_documents(self, documents):
-        processed_docs = {}
-        for doc_id, doc in enumerate(documents):
-            if doc in self.cache:
-                processed_docs[doc_id] = self.cache[doc]
+    # def process_documents(self, documents):
+    #     processed_docs = {}
+    #     for doc_id, doc in enumerate(documents):
+    #         if doc in self.cache:
+    #             processed_docs[doc_id] = self.cache[doc]
+    #         else:
+    #             processed_doc = self.nlp(doc)
+    #             self.cache[doc] = processed_doc
+    #             processed_docs[doc_id] = processed_doc
+    #     self.save_cache()
+    #     return processed_docs.values()
+            
+    def process_documents(self, documents, filenames):
+        processed_docs = []
+        for filename, doc in zip(filenames, documents):
+            if filename in self.cache:
+                #print('document already in cache')
+                processed_docs.append(self.cache[filename])
             else:
                 processed_doc = self.nlp(doc)
-                self.cache[doc] = processed_doc
-                processed_docs[doc_id] = processed_doc
+                self.cache[filename] = processed_doc
+                processed_docs.append(processed_doc)
         self.save_cache()
-        return processed_docs.values()
+        return processed_docs 
     
 
 class FeaturesDVEX:
@@ -566,28 +579,28 @@ class FeaturesPOST:
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
         #self.tagger=spacy.load('la_core_web_lg')
-        self.init_cache()
+        # self.init_cache()
     
     def __str__(self) -> str:
         return 'FeaturesPOST'
 
-    def init_cache(self):
-        self.changed = False
-        if self.savecache is None or not os.path.exists(self.savecache):
-            print('cache not found, initializing from scratch')
-            self.cache = {}
-        else:
-            print(f'loading cache from {self.savecache}')
-            self.cache = pickle.load(open(self.savecache, 'rb'))
+    # def init_cache(self):
+    #     self.changed = False
+    #     if self.savecache is None or not os.path.exists(self.savecache):
+    #         print('cache not found, initializing from scratch')
+    #         self.cache = {}
+    #     else:
+    #         print(f'loading cache from {self.savecache}')
+    #         self.cache = pickle.load(open(self.savecache, 'rb'))
 
-    def save_cache(self):
-        if self.savecache is not None and self.changed:
-            print(f'storing POST cache in {self.savecache}')
-            parent = Path(self.savecache).parent
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-            self.changed = False
+    # def save_cache(self):
+    #     if self.savecache is not None and self.changed:
+    #         print(f'storing POST cache in {self.savecache}')
+    #         parent = Path(self.savecache).parent
+    #         if parent:
+    #             os.makedirs(parent, exist_ok=True)
+    #         pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+    #         self.changed = False
 
     def post_analyzer(self, doc):
         ngram_range = self.tfidf_kwargs.get('ngram_range', (1,4)) # up to quadrigrams
@@ -626,12 +639,12 @@ class FeaturesPOST:
         self.vectorizer = TfidfVectorizer(
             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         self.vectorizer.fit(documents)
-        self.save_cache()
+        # self.save_cache()
         return self
 
     def transform(self, documents, y=None):
         post_features = self.vectorizer.transform(documents)
-        self.save_cache()
+        # self.save_cache()
 
         # features_num =post_features.shape[1]
 
@@ -645,7 +658,7 @@ class FeaturesPOST:
         self.vectorizer = TfidfVectorizer(
             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         post_features = self.vectorizer.fit_transform(documents)
-        self.save_cache()
+        # self.save_cache()
 
         # features_num = post_features.shape[1]
 
@@ -661,28 +674,28 @@ class FeaturesDEP:
         self.norm = norm
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
-        self.init_cache()
+        # self.init_cache()
     
     def __str__(self) -> str:
         return 'FeaturesDEP'
 
-    def init_cache(self):
-        self.changed = False
-        if self.savecache is None or not os.path.exists(self.savecache):
-            print('cache not found, initializing from scratch')
-            self.cache = {}
-        else:
-            print(f'loading cache from {self.savecache}')
-            self.cache = pickle.load(open(self.savecache, 'rb'))
+    # def init_cache(self):
+    #     self.changed = False
+    #     if self.savecache is None or not os.path.exists(self.savecache):
+    #         print('cache not found, initializing from scratch')
+    #         self.cache = {}
+    #     else:
+    #         print(f'loading cache from {self.savecache}')
+    #         self.cache = pickle.load(open(self.savecache, 'rb'))
 
-    def save_cache(self):
-        if self.savecache is not None and self.changed:
-            print(f'storing DEP cache in {self.savecache}')
-            parent = Path(self.savecache).parent
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-            self.changed = False
+    # def save_cache(self):
+    #     if self.savecache is not None and self.changed:
+    #         print(f'storing DEP cache in {self.savecache}')
+    #         parent = Path(self.savecache).parent
+    #         if parent:
+    #             os.makedirs(parent, exist_ok=True)
+    #         pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+    #         self.changed = False
 
     def dep_analyzer(self, doc):
         ngram_range = self.tfidf_kwargs.get('ngram_range', (2,3))
@@ -718,12 +731,12 @@ class FeaturesDEP:
         self.vectorizer = TfidfVectorizer(
             analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         self.vectorizer.fit(documents)
-        self.save_cache()
+        #self.save_cache()
         return self
 
     def transform(self, documents, y=None):
         dep_features = self.vectorizer.transform(documents)
-        self.save_cache()
+        #self.save_cache()
 
         features_num =dep_features.shape[1]
 
@@ -737,7 +750,7 @@ class FeaturesDEP:
         self.vectorizer = TfidfVectorizer(
             analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         dep_features = self.vectorizer.fit_transform(documents)
-        self.save_cache()
+        #self.save_cache()
 
         # features_num =dep_features.shape[1]
 

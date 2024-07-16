@@ -1,4 +1,4 @@
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import time
 
 import os
@@ -95,65 +95,75 @@ def load_dataset(remove_test=False):
 
 def split(X, y):
 
-    if np.sum(y) < 2:
+    labels = [label for label, title in y]
+
+    if np.sum(labels) < 2:
         print()
         print('One doc only author')
         print()
 
-        positive_doc_idx = y.index(1)
+        positive_doc_idx = labels.index(1)
         pos_X = X[positive_doc_idx]
         pos_X = np.expand_dims(pos_X, axis=0)
         pos_y = y[positive_doc_idx]
 
         neg_X = np.delete(X, positive_doc_idx)
-        neg_y = np.delete(y, positive_doc_idx)
+        neg_y = y[:positive_doc_idx] + y[positive_doc_idx+1:] #np.delete(y, positive_doc_idx)
         
-        X_dev_neg, X_test, y_dev_neg, y_test = train_test_split(
+        X_dev_neg, X_test, y_dev_neg, y_test_ = train_test_split(
             neg_X, neg_y, test_size=0.3, random_state=42
         )
         X_dev = np.concatenate((pos_X, X_dev_neg), axis=0)
-        y_dev = np.concatenate(([pos_y], y_dev_neg), axis=0)
-
-        # X_dev = list(X_dev)
-        # y_dev = list(y_dev)
-        # X_test = list(X_test)
-        # y_test = list(y_test)
+        y_dev_ = np.concatenate(([pos_y], y_dev_neg), axis=0)
 
         X_dev = [str(doc) for doc in X_dev]
-        y_dev = list(y_dev)
+        #y_dev = list(y_dev)
+        #y_dev = [label for label, _ in y_dev_]
+
         X_test = [str(doc) for doc in X_test]
-        y_test = list(y_test)
+        #y_test = list(y_test)
+        #y_test = [label for label, _ in y_test_]
+
+        # groups_dev =[title for _, title in y_dev_]
+        # groups_test =[title for _, title in y_test_]
 
     else:
         print('\nAuthor with multiple documents\n')
-        X_dev, X_test, y_dev, y_test = train_test_split(
-            X, y, test_size=0.3, stratify=y, random_state=42
+        X_dev, X_test, y_dev_, y_test_ = train_test_split(
+            X, y, test_size=0.3, stratify=labels, random_state=42
         )
+    
+    y_dev = [label for label, _ in y_dev_]
+    y_test = [label for label, _ in y_test_]
 
-    print('\nSplitting done.')
-    print()
+    groups_dev =[title for _, title in y_dev_]
+    groups_test =[title for _, title in y_test_]
 
-    return X_dev, X_test, y_dev, y_test 
+    return X_dev, X_test, y_dev, y_test, groups_dev, groups_test 
 
 
-def data_partitioner(documents, authors, groups, target, segment=True):
+def data_partitioner(documents, authors, filenames, target, segment=True):
     print('Partitioning data.\n')
 
     X = documents
-    y = [1 if author.rstrip() == target else 0 for author in authors]
+    # label encoder per salvare info relative a titoli
+    y = [(author, filename.split('-')[1].strip()) for  author, filename in zip(authors, filenames)]
+    y = [(1, title) if author.rstrip() == target else (0, title) for author, title in y]
+    #y = [1 if author.rstrip() == target else 0 for author in authors]
+    
 
-    X_dev, X_test, y_dev, y_test = split(X,y)
+    X_dev, X_test, y_dev, y_test, groups_dev, groups_test = split(X,y)
 
     if segment:
 
         whole_docs_len = len(y_test)
 
         segmentator_dev = Segmentation(split_policy='by_sentence', tokens_per_fragment=500)
-        splitted_docs_dev = segmentator_dev.fit_transform(documents=X_dev, authors=y_dev)
-        groups_dev = segmentator_dev.groups
+        splitted_docs_dev = segmentator_dev.fit_transform(documents=X_dev, authors=y_dev, filenames=groups_dev)
+        #groups_dev = segmentator_dev.groups
 
         segmentator_test = Segmentation(split_policy='by_sentence', tokens_per_fragment=500)
-        splitted_docs_test = segmentator_test.transform(documents=X_test, authors=y_test)
+        splitted_docs_test = segmentator_test.transform(documents=X_test, authors=y_test, filenames=groups_test)
         groups_test = segmentator_test.groups
 
         X_dev = splitted_docs_dev[0]
@@ -162,6 +172,7 @@ def data_partitioner(documents, authors, groups, target, segment=True):
 
         X_test = splitted_docs_test[0][:whole_docs_len] # whole_docs_test
         y_test = splitted_docs_test[1][:whole_docs_len] # whole_docs_y_test
+        groups_test_entire_docs = groups_test[:whole_docs_len]
 
         X_test_frag = splitted_docs_test[0][whole_docs_len:]
         y_test_frag = splitted_docs_test[1][whole_docs_len:]
@@ -171,7 +182,7 @@ def data_partitioner(documents, authors, groups, target, segment=True):
 
     print('Data partitioned.\n')
 
-    return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag
+    return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test_entire_docs, groups_test_frag
 
 
 def initialize_language_model(max_length):
@@ -184,53 +195,44 @@ def initialize_language_model(max_length):
     return nlp
 
 
-def extract_linguistic_features(nlp, documents, partition='Training set'):
-    print(f'Extracting linguistic features for {partition}.\n')
+# def extract_linguistic_features(nlp, documents, partition='Training set'):
+#     print(f'Extracting linguistic features for {partition}.\n')
 
-    sentences_tot = []
-    tokens_tot = []
-    POS_tags_tot = []
-    DEP_tags_tot = []
+#     sentences_tot = []
+#     tokens_tot = []
+#     POS_tags_tot = []
+#     DEP_tags_tot = []
 
-    for doc in documents:
-        processed_doc = nlp(doc)
+#     for doc in documents:
+#         processed_doc = nlp(doc)
 
-        sentences = [str(sentence) for sentence in processed_doc.sents]
-        tokens = [str(token) for token in processed_doc]
-        POS_tags = [token.pos_ if token.pos_ != '' else 'Unk' for token in processed_doc]
-        DEP_tags = [token.dep_ if token.dep_ != '' else 'Unk' for token in processed_doc]
+#         sentences = [str(sentence) for sentence in processed_doc.sents]
+#         tokens = [str(token) for token in processed_doc]
+#         POS_tags = [token.pos_ if token.pos_ != '' else 'Unk' for token in processed_doc]
+#         DEP_tags = [token.dep_ if token.dep_ != '' else 'Unk' for token in processed_doc]
 
-        sentences_tot += sentences
-        tokens_tot += tokens
-        POS_tags_tot += POS_tags
-        DEP_tags_tot += DEP_tags
+#         sentences_tot += sentences
+#         tokens_tot += tokens
+#         POS_tags_tot += POS_tags
+#         DEP_tags_tot += DEP_tags
 
-    print('linguistic features extracted.\n')
+#     print('linguistic features extracted.\n')
 
-    return sentences_tot, tokens_tot, POS_tags_tot, DEP_tags_tot
+#     return sentences_tot, tokens_tot, POS_tags_tot, DEP_tags_tot
     
 
 
 
 def extract_feature_vectors(documents, authors, filenames, nlp, target):
 
-    
     X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = data_partitioner(documents, authors, filenames, target=target)
 
-    # sentences_dev, tokens_dev, POS_tags_dev, DEP_tags_dev = extract_linguistic_features(nlp, X_dev)
-    # sentences_test, tokens_test, POS_tags_test, DEP_tags_test = extract_linguistic_features(nlp, X_test, partition='Test set')
-
-    # sentences_test_frag, tokens_test_frag, POS_tags_test_frag, DEP_tags_test_frag = extract_linguistic_features(nlp, X_test_frag, partition='fragmented Test set')
-    
     print('Extracting linguistic features. \n')
-    # processed_docs_dev = [nlp(doc for doc in X_dev)]
-    # processed_docs_test = [nlp(doc for doc in X_test)]
-    # processed_docs_test_frag = [nlp(doc for doc in X_test_frag)]
-
+    
     processor = DocumentProcessor(language_model=nlp)
-    processed_docs_dev = processor.process_documents(X_dev)
-    processed_docs_test = processor.process_documents(X_test)
-    processed_docs_test_frag = processor.process_documents(X_test_frag)
+    processed_docs_dev = processor.process_documents(X_dev, groups_dev)
+    processed_docs_test = processor.process_documents(X_test, groups_test)
+    processed_docs_test_frag = processor.process_documents(X_test_frag, groups_test_frag)
 
     print('Linguistic features extracted. \n')
 
@@ -291,74 +293,28 @@ def extract_feature_vectors(documents, authors, filenames, nlp, target):
     X_test_stacked = hstacker._hstack(feature_sets_test)
     X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
 
-    # function_words_extractor =  FeatureSetReductor(function_words_vectorizer)
-    # function_words_features_dev = function_words_vectorizer.fit_transform(X_dev)
-    # function_words_features_test = function_words_vectorizer.transform(X_test)
-    # function_words_features_test_frag = function_words_vectorizer.transform(X_test_frag)
-
-    # words_masker_extractor =  FeatureSetReductor(words_masker)
-    # words_masker_features_dev = words_masker.fit_transform(tokens_dev)
-    # words_masker_features_test = words_masker.transform(tokens_test)
-    # words_masker_features_test_frag = words_masker.transform(tokens_test_frag)
-                                                                         
-    # mendenhall_vectorizer_extractor =  FeatureSetReductor(mendenhall_vectorizer)
-    # mendenhall_vectorizer_features_dev = mendenhall_vectorizer.fit_transform(tokens_dev)
-    # mendenhall_vectorizer_features_test = mendenhall_vectorizer.transform(tokens_test)
-    # mendenhall_vectorizer_features_test_frag = mendenhall_vectorizer.transform(tokens_test_frag)
-
-    # POS_extractor =  FeatureSetReductor(POS_vectorizer)
-    # POS_features_dev = POS_vectorizer.fit_transform(tokens_dev)
-    # POS_features_test = POS_vectorizer.transform(tokens_test)
-    # POS_features_test_frag = POS_vectorizer.transform(tokens_test_frag)
-
-    # DEP_extractor =  FeatureSetReductor(DEP_vectorizer)
-    # DEP_features_dev = DEP_vectorizer.fit_transform(tokens_dev)
-    # DEP_features_test = DEP_vectorizer.transform(tokens_test)
-    # DEP_features_test_frag = DEP_vectorizer.transform(tokens_test_frag)
-
-    # punct_extractor =  FeatureSetReductor(punct_vectorizer)
-    # punct_features_dev = punct_vectorizer.fit_transform(X_dev)
-    # punct_features_test = punct_vectorizer.transform(X_test)
-    # punct_features_test_frag = punct_vectorizer.transform(X_test_frag)
-    
-
-    # feature_sets_dev = []
-    # feature_sets_test = []
-    # feature_sets_test_frag = []
-
-    # for vectorizer in vectorizers:
-    #     extractor =  FeatureSetReductor(vectorizer)
-    #     feature_sets_dev.append(extractor.fit_transform(tokens_dev, authors=y_dev))
-    #     feature_sets_test.append(extractor.transform(tokens_test))
-    #     feature_sets_test_frag.append(extractor.transform(tokens_test_frag))
-    
-   
-
-    # X_dev_stacked = hstacker._hstack([function_words_features_dev, words_masker_features_dev, mendenhall_vectorizer_features_dev,
-    #                                   POS_features_dev, DEP_features_dev, punct_features_dev])
-    # X_test_stacked = hstacker._hstack([function_words_features_test, words_masker_features_test, mendenhall_vectorizer_features_test,
-    #                                    POS_features_test, DEP_features_test, punct_features_test])
-    # X_test_stacked_frag = hstacker._hstack([function_words_features_test_frag, words_masker_features_test_frag, mendenhall_vectorizer_features_test_frag,
-    #                                         POS_features_test_frag, DEP_features_test_frag, punct_features_test_frag])
-
-
     print('Feature vectors extracted')
     
     return X_dev_stacked, X_test_stacked, X_test_stacked_frag, y_dev, y_test
 
 
 def model_trainer(X_dev_stacked, y_dev, clf=None):
+    print('Building model...\n')
     if not clf:
         clf = SVC(kernel='linear', probability=True, random_state=42, class_weight='balanced')
-    #f1_binary = make_scorer(f1_score, pos_label=1)
 
     clf.fit(X_dev_stacked, y_dev)
+
+    print('Model built. \n')
     return clf
 
 def get_scores(clf, X_test, y_test):
+    print('Evaluating performance...\n')
+
     y_pred = clf.predict(X_test)
+    y_pred=[int(pred) for pred in y_pred]
     acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)
+    f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)# pos_label='1')
     precision, recall, _, _ = precision_recall_fscore_support(y_test, y_pred, average='binary', zero_division=1.0)
     cf = confusion_matrix(y_test, y_pred).ravel() #(tn, fp, fn, tp)
 
@@ -386,12 +342,14 @@ def get_scores(clf, X_test, y_test):
 
     print('Confidence scores: \n', proba)
 
+    print('Performance evaluated.\n')
     return acc, f1, cf
 
 
 def save_res(target_author, accuracy, f1, cf, file_name='verifiers_res_tot.csv'):
-    #path = '/home/martinaleo/.ssh/authorship/src/Cervantes_base_clf_fullsets-res'
     path= '/home/martinaleo/Quaestio_AV/authorship/src/data/hold_out_res'
+    print(f'Saving results in {file_name}\n')
+
     os.chdir(path)
     data = {
         'Target author': target_author,
@@ -414,7 +372,7 @@ def save_res(target_author, accuracy, f1, cf, file_name='verifiers_res_tot.csv')
 
 def build_model(target, save_results=False):
     print('Start time:', time.localtime(), '\n')
-    print('Building model for author', target, '.\n')
+    print('Building model for author', target + '.\n')
 
     start_time = time.time()
 
@@ -424,32 +382,18 @@ def build_model(target, save_results=False):
 
     nlp = initialize_language_model(max_length=max([len(document) for document in documents]))
 
-
     X_dev_stacked, X_test_stacked, X_test_stacked_frag, y_dev, y_test = extract_feature_vectors(documents, authors, filenames, nlp, target)
 
-    
-    # print('Extracting features.\n')
-    # X_dev_stacked, X_test_stacked, X_test_stacked_frag = extract_feature_vectors(X_dev, X_test, y_dev, X_test_frag, nlp)
-    # print('Features extracted.\n')
+    #print(X_dev_stacked.shape, X_test_stacked.shape, len(y_dev), len(y_test))
 
-    print(X_dev_stacked.shape, X_test_stacked.shape)
-
-    print('Building model.\n')
     clf = model_trainer(X_dev_stacked, y_dev)
-    print('Model built.\n')
 
-    print('Evaluating performance.\n')
     acc, f1, cf = get_scores(clf, X_test_stacked, y_test)
-    print('Performance evaluated.\n')
 
     if save_results:
-        print('Saving results.\n')
         save_res(target, acc, f1, cf)
-        print('Results saved.\n')
-
-
+        
     print('Model succsessfully built for author', target)
-
     print(f'Time spent for model building for author {target}:', time.time() - start_time)
 
 def loop_over_authors():
@@ -459,13 +403,5 @@ def loop_over_authors():
         build_model(target=author, save_results=True)
 
     
-
-#build_model(target='Cicchus Esculanus')
+#build_model(target='Antonio Pelacani da Parma')
 loop_over_authors()
-
-
-
-
-
-
-

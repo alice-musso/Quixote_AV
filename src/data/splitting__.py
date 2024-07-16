@@ -3,6 +3,7 @@ from copy import copy
 import numpy as np
 import nltk
 from nltk.tokenize import word_tokenize
+from sklearn.calibration import LabelEncoder
 from tqdm import tqdm
 
 from helpers__ import tokenize
@@ -22,30 +23,50 @@ class Segmentation:
         self.keep_full = keep_full
         self.groups = None
 
+
     def fit(self, X, y):
         return self
 
-    def transform(self, documents, authors):
+    def transform(self, documents, authors, filenames, label_encode=False):
         fragments = copy(documents) if self.keep_full else []
         authors_fragments = copy(authors) if self.keep_full else []
-        groups = list(range(len(documents))) if self.keep_full else  []
-        for i, text in tqdm(enumerate(documents), total=len(documents), desc='generating fragments'):
+        #groups = list(range(len(documents))) if self.keep_full else  []
+
+        groups = filenames if self.keep_full else []
+
+        for i, (text, group) in tqdm(enumerate(zip(documents, groups)), total=len(documents), desc='generating fragments'):
+
             if self.split_policy == 'by_endline':
                 text_fragments = self._split_by_endline(text)
             elif self.split_policy == 'by_sentence':
                 text_fragments = self._split_by_sentences(text)
+
             text_fragments = self._windows(text_fragments, tokens_per_fragment=self.tokens_per_fragment)
             fragments.extend(text_fragments)
-            groups.extend([i] * len(text_fragments))
+
+            groups.extend([group] * len(text_fragments))
             if authors is not None:
                 authors_fragments.extend([authors[i]] * len(text_fragments))
 
-        self.groups = np.asarray(groups)
+        self.groups = self.add_idx(groups)
+        return fragments, authors_fragments, groups
+    
+    def add_idx(self,filenames):
+        count = {}
+        groups_counted = []
 
-        return fragments, authors_fragments
+        for name in filenames:
+            if name in count:
+                count[name] += 1
+            else:
+                count[name] = 0
+            groups_counted.append(f"{name}_{count[name]}")
+        return groups_counted
 
-    def fit_transform(self, documents, authors):
-        return self.fit(documents, authors).transform(documents, authors)
+
+    def fit_transform(self, documents, authors, filenames):
+        return self.fit(documents, authors).transform(documents, authors, filenames=filenames)
+    
 
     def _split_by_endline(self, text):
         return [t.strip() for t in text.split('\n') if t.strip()]
@@ -104,19 +125,20 @@ class Segmentation:
             new_fragments.append(current_batch.strip())
             
         return new_fragments
+
             
 
-if __name__ == '__main__':
-    from data.data_loader import load_corpus
+# if __name__ == '__main__':
+#     from data.data_loader import load_corpus
 
-    path = '../../LatinCorpus/Progetto Quaestio'
-    documents, authors, filenames = load_corpus('../../LatinCorpus')
-    print(f'read {len(documents)} documents')
-    print(f'#authors {len(set(authors))}')
+#     path = '../../LatinCorpus/Progetto Quaestio'
+#     documents, authors, filenames = load_corpus('../../LatinCorpus')
+#     print(f'read {len(documents)} documents')
+#     print(f'#authors {len(set(authors))}')
 
-    splitter = Segmentation(split_policy='by_sentence', window_size=5, min_tokens=8, keep_full=True)
-    documents, authors = splitter.fit_transform(documents, authors)
-    groups = splitter.groups
-    print(len(documents))
-    print(len(authors))
-    print(len(groups))
+#     splitter = Segmentation(split_policy='by_sentence', window_size=5, min_tokens=8, keep_full=True)
+#     documents, authors = splitter.fit_transform(documents, authors)
+#     groups = splitter.groups
+#     print(len(documents))
+#     print(len(authors))
+#     print(len(groups))
