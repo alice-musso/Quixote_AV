@@ -17,6 +17,9 @@ from tqdm import tqdm
 from functools import lru_cache
 import pickle
 from nltk import ngrams
+from cltk.prosody.lat.macronizer import Macronizer
+from cltk.prosody.lat.scanner import Scansion
+from nltk import word_tokenize, sent_tokenize
 
 from string import punctuation
 
@@ -25,7 +28,7 @@ from string import punctuation
 
 
 class DocumentProcessor:
-    def __init__(self, language_model, savecache='.cache/processed_docs_data.pkl'):
+    def __init__(self, language_model=None, savecache='.cache/processed_docs_data.pkl'):
         self.nlp = language_model
         self.savecache = savecache
         self.init_cache()
@@ -46,29 +49,32 @@ class DocumentProcessor:
                 os.makedirs(parent, exist_ok=True)
             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-    # def process_documents(self, documents):
-    #     processed_docs = {}
-    #     for doc_id, doc in enumerate(documents):
-    #         if doc in self.cache:
-    #             processed_docs[doc_id] = self.cache[doc]
+    # def _process_documents(self, documents, filenames):
+    #     processed_docs = []
+    #     for filename, doc in zip(filenames, documents):
+    #         if filename in self.cache:
+    #             #print('document already in cache')
+    #             processed_docs.append(self.cache[filename])
     #         else:
+    #             print(f'{filename} not in cache')
     #             processed_doc = self.nlp(doc)
-    #             self.cache[doc] = processed_doc
-    #             processed_docs[doc_id] = processed_doc
-    #     self.save_cache()
-    #     return processed_docs.values()
+    #             self.cache[filename] = processed_doc
+    #             processed_docs.append(processed_doc)
+    #             self.save_cache()
+    #     return processed_docs 
             
     def process_documents(self, documents, filenames):
-        processed_docs = []
+        processed_docs = {}
         for filename, doc in zip(filenames, documents):
             if filename in self.cache:
                 #print('document already in cache')
-                processed_docs.append(self.cache[filename])
+                processed_docs[filename[:-2]] = self.cache[filename]
             else:
+                print(f'{filename} not in cache')
                 processed_doc = self.nlp(doc)
                 self.cache[filename] = processed_doc
-                processed_docs.append(processed_doc)
-        self.save_cache()
+                processed_docs[filename[:-2]] = self.cache[filename]
+                self.save_cache()
         return processed_docs 
     
 
@@ -136,6 +142,48 @@ class FeaturesDVEX:
         return dis_texts
     
 
+class FeaturesSyllabicQuantities:
+
+    def __init__(self, **tfidf_kwargs):
+        self.tfidf_kwargs = tfidf_kwargs
+
+    def __str__(self) -> str:
+        return 'FeaturesSyllabicQuantities'
+
+
+    def fit(self, documents, y=None):
+        raw_documents = [doc.text for doc in documents]
+        scanned_texts = self.metric_scansion(raw_documents)
+        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        self.vectorizer.fit(scanned_texts)
+        return self
+
+
+    def transform(self, documents, y=None):
+        raw_documents = [doc.text for doc in documents]
+        scanned_texts = self.metric_scansion(raw_documents)
+        features = self.vectorizer.transform(scanned_texts)
+        return features
+    
+
+    def fit_transform(self, documents, y=None):
+        raw_documents = [doc.text for doc in documents]
+        scanned_texts = self.metric_scansion(raw_documents)
+        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        features = self.vectorizer.fit_transform(scanned_texts)
+        return features
+
+
+    def metric_scansion(self, documents):
+        macronizer = Macronizer('tag_ngram_123_backoff')
+        scanner = Scansion(
+            clausula_length=100000)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
+        scanned_texts = [scanner.scan_text(macronizer.macronize_text(doc)) for doc in
+                        tqdm(documents, 'metric scansion', total=len(documents))]
+        scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
+        return scanned_texts
+    
+
 class FeaturesMendenhall:
     """
     Extract features as the frequency of the words' lengths used in the documents,
@@ -187,7 +235,7 @@ class FeaturesSentenceLength:
         features = []
         for doc in documents:
             #preocessed_doc = NLP(doc)
-            sentences = [str(sentence) for sentence in doc.sents]
+            #sentences = [str(sentence) for sentence in doc.sents]
             #sentences = [t.strip() for t in nltk.tokenize.sent_tokenize(doc, language=self.language) if t.strip()]
             sentence_lengths = []
             for sentence in doc.sents:
@@ -220,7 +268,7 @@ class FeaturesCharNGram:
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n, self.n), use_idf=False, norm=self.norm, min_df=3).fit(raw_documents)
+        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n-1, self.n), use_idf=False, norm=self.norm, min_df=3).fit(raw_documents)
         return self
 
     def transform(self, documents, y=None):
@@ -297,7 +345,7 @@ class FeaturesPunctuation:
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
         
-        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3)
+        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=(1,3))
 
         # features_num =features.shape[1]
 
@@ -474,7 +522,7 @@ class FeatureSetReductor:
         self.measure = measure
         #self.feat_sel = SelectKBest(measure, k=self.k)
 
-        self.normalize = normalize #new!
+        self.normalize = normalize 
         if self.normalize:
             self.normalizer = Normalizer()
     
