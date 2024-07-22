@@ -8,6 +8,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_recall_fscore_support, f1_score, confusion_matrix, classification_report, accuracy_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.svm import SVC
+from sklearn.ensemble import AdaBoostClassifier
 from data_loader import load_corpus
 from splitting__ import Segmentation
 import spacy
@@ -23,15 +24,20 @@ from features import (
     FeaturesDEP,
     FeaturesPunctuation,
     HstackFeatureSet,
-    FeaturesCharNGram
+    FeaturesCharNGram, 
+    FeaturesSyllabicQuantities
 )
+from data_loader import remove_citations
 
 NLP = spacy.load('la_core_web_lg')
 TEST_SIZE=0.2
 RANDOM_STATE = 42
 TARGET='Dante'
+PROCESSED = True
+DEBUG_MODE = False
 
-def load_dataset(path ='/home/martinaleo/Quaestio_AV/authorship/src/data/Quaestio-corpus', remove_test=False, debug_mode=False):
+
+def load_dataset(path ='src/data/Quaestio-corpus', remove_test=False, debug_mode=DEBUG_MODE):
     print('Loading data.\n')
 
     documents, authors, filenames = load_corpus(path=path)
@@ -41,16 +47,18 @@ def load_dataset(path ='/home/martinaleo/Quaestio_AV/authorship/src/data/Quaesti
 
     print('Data loaded.\n')
 
-    '''code to remove patterns'''
+    print('Data cleaning.\n')
+    documents = [remove_citations(doc) for doc in documents]
+
     return documents, authors, filenames
 
 
-def initialize_language_model(max_length):
-    print('Importing language model.\n')
+# def initialize_language_model(max_length):
+#     print('Setting up language model.\n')
 
-    NLP.max_length = max_length #1364544
+#     NLP.max_length = max_length #1364544
 
-    print('Language model imported.\n')
+#     print('Language model imported.\n')
 
 
 def split(X, y):
@@ -98,11 +106,10 @@ def split(X, y):
 
     print('Target:', TARGET)
     print('Positive training examples:')
-    for group in pos_group_dev:
-        print(group.split('-')[1][:-2])
+    print(', '.join([group.split('-')[1][:-2] for group in pos_group_dev])[1:])
     print('\nPositive test examples:')
-    for group in pos_group_test:
-        print(group.split('-')[1][:-2])
+    print(', '.join([group.split('-')[1][:-2] for group in pos_group_test])[1:])
+    print()
     
 
     return X_dev, X_test, y_dev, y_test, groups_dev, groups_test 
@@ -150,12 +157,12 @@ def data_partitioner(documents, authors, filenames, target, segment=True):
     return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test_entire_docs, groups_test_frag
 
 
-def get_processed_documents(documents, authors, filenames, processed=True, cache_file='.cache/processed_ent_docs.pkl'):
+def get_processed_documents(documents, authors, filenames, processed=PROCESSED, cache_file='.cache/processed_ent_docs_cleaned.pkl'):
 
     print('Processing documents.\n')
 
     if not processed:
-        initialize_language_model(max_length=max([len(document) for document in documents]))
+        NLP.max_length =max([len(document) for document in documents])
 
         print('Processing docs.\n')
         processor = DocumentProcessor(language_model=NLP, savecache=cache_file)
@@ -209,7 +216,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
     return processed_X
 
 
-def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag):    #(documents, authors, filenames, nlp, target):
+def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag, y_dev):    #(documents, authors, filenames, nlp, target):
 
     print('Extracting feature vectors.\n')
 
@@ -230,11 +237,13 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
     DEP_vectorizer = FeaturesDEP()
     punct_vectorizer = FeaturesPunctuation()
     char_extractor = FeaturesCharNGram()
+    syllabic_quant_extractor = FeaturesSyllabicQuantities()
 
 
     vectorizers = [
-            function_words_vectorizer,
             words_masker,
+            #syllabic_quant_extractor,
+            function_words_vectorizer,
             POS_vectorizer ,
             mendenhall_vectorizer,
             DEP_vectorizer,
@@ -253,13 +262,15 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
         #extractor =  FeatureSetReductor(vectorizer)
         print('Extracting',vectorizer)
 
-        features_dev = vectorizer.fit_transform(processed_docs_dev)
+        reductor =  FeatureSetReductor(vectorizer, k_ratio=0.5)
+
+        features_dev = reductor.fit_transform(processed_docs_dev, y_dev=y_dev)
         feature_sets_dev.append(features_dev)
 
-        features_test = vectorizer.transform(processed_docs_test)
+        features_test = reductor.transform(processed_docs_test)
         feature_sets_test.append(features_test)
 
-        features_test_frag = vectorizer.transform(processed_docs_test_frag)
+        features_test_frag = reductor.transform(processed_docs_test_frag)
         feature_sets_test_frag.append(features_test_frag)
         
     X_dev_stacked = hstacker._hstack(feature_sets_dev)
@@ -283,21 +294,20 @@ def prepare_data(target=TARGET):
     X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
     X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
-    X_dev_stacked, X_test_stacked, X_test_stacked_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed)
+    X_dev_stacked, X_test_stacked, X_test_stacked_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev)
 
     return X_dev_stacked, X_test_stacked, y_dev, y_test, X_test_stacked_frag, y_test_frag, groups_dev, groups_test, groups_test_frag
 
 
-def model_trainer(X_dev_stacked, y_dev, groups_dev, model=None, param_grid=None):
+def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
 
     groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
 
-    if not model:
-        #model = SVC(kernel='linear', probability=True, random_state=42, class_weight='balanced')
-        model = LinearSVC(random_state=42, dual='auto')
-
-    if not param_grid:
-        param_grid= {'C': np.logspace(-4,4,9)}
+    if model_name in ['Linear SVC, Logistic Regressor, Probabilistic SVC']:
+        param_grid = {'C': np.logspace(-4,4,9)}
+    elif model_name == 'Adaboost':
+        param_grid = {'learning_rate': [0.001, 0.01, 0.1, 0.2, 0.5, 0.7, 1.0],
+                      'n_estimators' : [50,100,200,500]}
 
     grid = GridSearchCV(model,
                         param_grid=param_grid,
@@ -374,7 +384,7 @@ def save_res(target_author, accuracy, f1, cf, model_name, file_name='verifiers_r
         if f.tell() == 0:
             writer.writeheader()
         writer.writerow(data)
-    print(f"{model_name} res for author {target_author} saved in file '{file_name}\n'")
+    print(f"{model_name} res for author {target_author} saved in file '{file_name}'\n")
 
 
 def build_model(save_results=True):
@@ -386,20 +396,21 @@ def build_model(save_results=True):
     X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = prepare_data()
     
     models = [
-        (LinearSVC(random_state=42, dual='auto'), 'Linear SVC'),
-        (LogisticRegression(random_state=42, n_jobs=-1), 'Logistic Regressor'),
-        (SVC(kernel='linear', probability=True, random_state=42), 'Probabilistic SVC')
+        #(LinearSVC(random_state=RANDOM_STATE, dual='auto'), 'Linear SVC'),
+        #(LogisticRegression(random_state=RANDOM_STATE, n_jobs=-1), 'Logistic Regressor'),
+        #(SVC(kernel='linear', probability=True, random_state=RANDOM_STATE), 'Probabilistic SVC')
+        (AdaBoostClassifier(random_state=RANDOM_STATE), 'Adaboost')
     ]
 
     for model, model_name in models:
         print(f'Building {model_name} classifier...\n')
-        clf = model_trainer(X_dev, y_dev, groups_dev, model=model)
+        clf = model_trainer(X_dev, y_dev, groups_dev, model=model, model_name=model_name)
         acc, f1, cf = get_scores(clf, X_test, y_test)
 
         if save_results:
             save_res(TARGET, acc, f1, cf, model_name)
 
-    print(f'Time spent for model building for author {TARGET}:', (time.time() - (start_time))/60, 'minutes.')
+    print(f'Time spent for model building for author {TARGET}:', (time.time() - start_time)/60, 'minutes.')
 
 
 build_model()
