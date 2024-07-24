@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-
+import re
+from data_loader import clean_texts
 from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
 import string
@@ -78,50 +79,103 @@ class DocumentProcessor:
         return processed_docs 
     
 
-class FeaturesDVEX:
+class FeaturesDistortedView:
 
-    def __init__(self, function_words, **tfidf_kwargs):
+    def __init__(self, function_words, method, **tfidf_kwargs):
+        assert method in {'DVEX', 'DVMA', 'DVSA'}, 'text distortion method not valid'
         self.function_words = function_words
         self.tfidf_kwargs = tfidf_kwargs
+        self.method = method
+        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
         
 
     def __str__(self) -> str:
-        return 'FeaturesDVEX'
+        if self.method=='DVEX':
+            return 'FeaturesDVEX'
+        if self.method=='DVMA':
+            return 'FeaturesDVMA'
+        if self.method=='DVSA':
+            return 'FeaturesDVSA'
 
 
     def fit(self, documents, y=None):
-        distortions = self.distortion(documents)
-        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        distortions = self.distortion(documents, method=self.method)
+        
         self.vectorizer.fit(distortions)
         return self
 
 
-    def transform(self, tokens, y=None):
-        distortions = self.distortion(tokens)
+    def transform(self, documents, y=None):
+        distortions = self.distortion(documents, method=self.method)
         features = self.vectorizer.transform(distortions)
         features_num = features.shape[1]
-        
         # print(f'Vectorizer: {FeaturesDVEX}')
         # print('Features:', features_num)
         return features
     
 
-    def fit_transform(self, tokens, y=None):
-        distortions = self.distortion(tokens)
-        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+    def fit_transform(self, documents, y=None):
+        distortions = self.distortion(documents, method=self.method)
         features = self.vectorizer.fit_transform(distortions)
-        features_num = features.shape[1]
+        # features_num = features.shape[1]
 
         # print(f'Vectorizer: {self}')
         # print('Features:', features_num)
         return features
+    
+    def distortion(self, documents, method):
+        if method == 'DVEX':
+            dis_texts = self.dis_DVEX(documents)
+        elif method =='DVMA':
+            dis_texts = self.dis_DVMA(documents)
+        elif method =='DVSA':
+            dis_texts = self.dis_DVSA(documents)
+        return dis_texts
+
+
+    # DV-MA text distortion method from Stamatatos_2018:
+    # Every word not in function_words is masked by replacing each of its characters with an asterisk (*).
+    # for character embedding
+    def dis_DVMA(self, docs):
+        dis_texts = []
+        for doc in tqdm(docs, 'DV-MA distorting', total=len(docs)):
+            tokens = [str(token) for token in doc]
+            dis_text = ''
+            for token in tokens:
+                if dis_text != '' and token != '.':
+                    dis_text += ' '
+                if token in self.function_words or token == '.':
+                    dis_text += token
+                else:
+                    dis_text += '*' * len(token)
+            dis_texts.append(dis_text)
+        return dis_texts
+    
+    
+    # DV-SA text distortion method from Stamatatos_2018:
+    # Every word not in function_words is replaced with an asterisk (*).
+    # for character embedding
+    def dis_DVSA(self, docs):
+        dis_texts = []
+        for doc in tqdm(docs, 'DV-SA distorting', total=len(docs)):
+            tokens = [str(token) for token in doc]
+            dis_text = ''
+            for token in tokens:
+                if dis_text != '' and token != '.':
+                    dis_text += ' '
+                if token in self.function_words or token == '.':
+                    dis_text += token
+                else:
+                    dis_text += '*'
+            dis_texts.append(dis_text)
+        return dis_texts
     
 
     # DV-EX text distortion method from Stamatatos_2018:
     # Every word not in function_words is masked by replacing each of its characters with an asterisk (*),
     # except first and last one.
     # Words of len 2 or 1 remain the same.
-    def distortion(self, documents):
+    def dis_DVEX(self, documents):
 
         def DVEX(token):
             if len(token) <= 2:
@@ -129,7 +183,7 @@ class FeaturesDVEX:
             return token[0] + ('*' * (len(token) - 2)) + token[-1]
 
         dis_texts = []
-        for doc in documents:
+        for doc in tqdm(documents, 'DV-EX distorting', total=len(documents)):
             tokens = [str(token) for token in doc]
             dis_text = [token if token in self.function_words else DVEX(token) for token in tokens]
             # for token in tokens:
@@ -141,11 +195,15 @@ class FeaturesDVEX:
 
         return dis_texts
     
+        
 
 class FeaturesSyllabicQuantities:
 
-    def __init__(self, **tfidf_kwargs):
+    def __init__(self, min_range=1,max_range=1, **tfidf_kwargs):
         self.tfidf_kwargs = tfidf_kwargs
+        self.min_range = min_range
+        self.max_range = max_range
+        
 
     def __str__(self) -> str:
         return 'FeaturesSyllabicQuantities'
@@ -153,7 +211,7 @@ class FeaturesSyllabicQuantities:
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(raw_documents)
+        scanned_texts = self.metric_scansion(documents)
         self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
         self.vectorizer.fit(scanned_texts)
         return self
@@ -161,27 +219,60 @@ class FeaturesSyllabicQuantities:
 
     def transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(raw_documents)
+        scanned_texts = self.metric_scansion(documents)
         features = self.vectorizer.transform(scanned_texts)
         return features
     
 
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(raw_documents)
+        scanned_texts = self.metric_scansion(documents)
         self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
         features = self.vectorizer.fit_transform(scanned_texts)
         return features
-
+    
 
     def metric_scansion(self, documents):
+        documents = [self.remove_invalid_word(doc) for doc in documents]
+            
         macronizer = Macronizer('tag_ngram_123_backoff')
         scanner = Scansion(
-            clausula_length=100000)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
-        scanned_texts = [scanner.scan_text(macronizer.macronize_text(doc)) for doc in
-                        tqdm(documents, 'metric scansion', total=len(documents))]
+            clausula_length=100000, punctuation=string.punctuation)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
+        macronized_texts = [macronizer.macronize_text(doc) for doc in tqdm(documents, 'macronizing', total=len(documents))]
+        scanned_texts = [scanner.scan_text(doc) for doc in
+                        tqdm(macronized_texts, 'metric scansion', total=len(macronized_texts))]
         scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
         return scanned_texts
+    
+    def remove_invalid_word(self, document):
+        # todo: salvare i numeri romani, i numeri
+        legal_words=[]
+        vowels = set('aeiouāēīōū')
+        tokens = [token.text for token in document]
+
+        for token in tokens:
+            token = token.lstrip()
+            if len(token) == 1:
+                if token.lower() in vowels or token in punctuation:
+                    legal_words.append(token)
+            elif len(token) == 2:
+                if not all(char in punctuation for char in token) and not all(char not in vowels for char in token): 
+                    legal_words.append(token)
+            else:
+                if (
+                    any(char in vowels for char in token)
+                    and not any(
+                        token[i] in punctuation and token[i + 1] in punctuation
+                        for i in range(len(token) - 1)
+                    )
+                ):
+                    legal_words.append(token)
+
+            # if token not in legal_words:
+            #     print('Invalid word entry:', token)
+
+        return ' '.join(legal_words)
+
     
 
 class FeaturesMendenhall:
@@ -200,7 +291,7 @@ class FeaturesMendenhall:
 
     def transform(self, documents, y=None):
         features = []
-        for doc in documents:
+        for doc in tqdm(documents, 'Extracting word lenghts', total=len(documents)):
         #     processed_doc = NLP(doc)
             word_lengths = [len(str(token)) for token in doc]
         #word_lengths = [len(str(token)) for token in tokens]
@@ -233,7 +324,7 @@ class FeaturesSentenceLength:
 
     def transform(self, documents, y=None):
         features = []
-        for doc in documents:
+        for doc in tqdm(documents, 'Extracting sentence lenghts', total=len(documents)):
             #preocessed_doc = NLP(doc)
             #sentences = [str(sentence) for sentence in doc.sents]
             #sentences = [t.strip() for t in nltk.tokenize.sent_tokenize(doc, language=self.language) if t.strip()]
@@ -246,7 +337,7 @@ class FeaturesSentenceLength:
             distributuion = np.cumsum(hist)
             features.append(distributuion)
 
-        features_num = np.asarray(features).shape[1]
+        # features_num = np.asarray(features).shape[1]
 
         # print(f'Vectorizer: {self}')
         # print('Features:', features_num)
@@ -258,17 +349,17 @@ class FeaturesSentenceLength:
 
 class FeaturesCharNGram:
 
-    def __init__(self, n=3, sublinear_tf=False, norm='l1'):
+    def __init__(self, n=(1,3), sublinear_tf=False, norm='l1'):
         self.n = n
         self.sublinear_tf = sublinear_tf
         self.norm = norm
     
     def __str__(self) -> str:
-        return 'FeaturesCharNGram'
+        return f'FeaturesCharNGram [n-gram range: ({self.n[0]},{self.n[1]})]'
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n-1, self.n), use_idf=False, norm=self.norm, min_df=3).fit(raw_documents)
+        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n), use_idf=False, norm=self.norm, min_df=3).fit(raw_documents)
         return self
 
     def transform(self, documents, y=None):
@@ -277,7 +368,7 @@ class FeaturesCharNGram:
 
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
-        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n, self.n), use_idf=False, norm=self.norm, min_df=3)
+        self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n), use_idf=False, norm=self.norm, min_df=3)
         return self.vectorizer.fit_transform(raw_documents)
 
 
@@ -345,7 +436,7 @@ class FeaturesPunctuation:
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
         
-        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=(1,3))
+        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=(1,1))
 
         # features_num =features.shape[1]
 
@@ -520,8 +611,6 @@ class FeatureSetReductor:
         self.k = k
         self.k_ratio = k_ratio
         self.measure = measure
-        #self.feat_sel = SelectKBest(measure, k=self.k)
-
         self.normalize = normalize 
         if self.normalize:
             self.normalizer = Normalizer()
@@ -530,63 +619,87 @@ class FeatureSetReductor:
         return( f'FeatureSetReductor for {self.feature_extractor}' )
 
 
-    def fit(self, documents, authors=None):
-        matrix = self.feature_extractor.fit_transform(documents, authors)
+    def fit(self, documents, y_dev=None):
+        return self.feature_extractor.fit(documents, y_dev)
+        # features_in = matrix.shape[1]
+
+        # if features_in < self.k:
+        #     self.k = features_in
+        #     self.feat_sel = SelectKBest(self.measure, k='all')
+        # else:
+        #     #self.k = round(features_in * 0.1) #keep 10% of features
+        #     self.k = round(features_in * self.k_ratio) #keep k_ratio% of features
+        #     self.feat_sel = SelectKBest(self.measure, k=self.k)
+
+        # if self.normalize:
+        #     self.normalizer.fit(matrix)
+
+        # self.feat_sel.fit(matrix, y_dev)
+
+        # print(self)
+        # print('features in:', features_in, 'k:', self.k)
+        # print()
+        # return self
+
+    def transform(self, documents, y_dev=None):
+        matrix = self.feature_extractor.transform(documents)
+
+        if self.normalize:
+            matrix_norm  = self.normalizer.transform(matrix) 
+            matrix_red = self.feat_sel.transform(matrix_norm)
+        else:
+            matrix_red = self.feat_sel.transform(matrix, y_dev)
+        return matrix_red #self.feat_sel.transform(matrix)
+
+    def fit_transform(self, documents, y_dev=None):
+        matrix = self.feature_extractor.fit_transform(documents, y_dev)
         features_in = matrix.shape[1]
 
-        if features_in < 100:
+        if features_in < self.k:
             self.k = features_in
-            self.feat_sel = SelectKBest(self.measure, k='all')
         else:
             #self.k = round(features_in * 0.1) #keep 10% of features
             self.k = round(features_in * self.k_ratio) #keep k_ratio% of features
-            self.feat_sel = SelectKBest(self.measure, k=self.k)
 
-        if self.normalize:
-            self.normalizer.fit(matrix)
-
-        self.feat_sel.fit(matrix, authors)
+        self.feat_sel = SelectKBest(self.measure, k=self.k)
 
         print(self)
         print('features in:', features_in, 'k:', self.k)
         print()
-        return self
 
-    def transform(self, documents, authors=None):
-        matrix = self.feature_extractor.transform(documents)
         if self.normalize:
-            matrix_norm  = self.normalizer.transform(matrix)
-            matrix_red = self.feat_sel.transform(matrix_norm)
-        else:
-            matrix_red = self.feat_sel.transform(matrix)
-        return matrix_red #self.feat_sel.transform(matrix)
-
-    def fit_transform(self, documents, authors=None):
-        return self.fit(documents,authors).transform(documents, authors)
-    
-    def set_params(self, **params):
-        for key, value in params.items():
-            setattr(self, key, value)
+            matrix_norm  = self.normalizer.fit_transform(matrix, y_dev)
+            matrix_red = self.feat_sel.fit_transform(matrix_norm, y_dev)
             
-            if key == 'measure':
-                self.feat_sel = SelectKBest(value, k=self.k)
-            elif key == 'k_ratio':
-                self.feat_sel.k_ratio = value
-            elif key == 'normalize':
-                if value:
-                    self.normalizer = Normalizer()
-                else:
-                    self.normalizer = None
-        return self
+        else:
+            matrix_red = self.feat_sel.fit_transform(matrix, y_dev)
+
+        return matrix_red
     
-    def get_params(self, deep=True):
-        params = {
-            'feature_extractor': self.feature_extractor,
-            'measure': self.measure,
-            'k': self.k,
-            'normalize': self.normalize
-        }
-        return params
+
+    # def set_params(self, **params):
+    #     for key, value in params.items():
+    #         setattr(self, key, value)
+            
+    #         if key == 'measure':
+    #             self.feat_sel = SelectKBest(value, k=self.k)
+    #         elif key == 'k_ratio':
+    #             self.feat_sel.k_ratio = value
+    #         elif key == 'normalize':
+    #             if value:
+    #                 self.normalizer = Normalizer()
+    #             else:
+    #                 self.normalizer = None
+    #     return self
+    
+    # def get_params(self, deep=True):
+    #     params = {
+    #         'feature_extractor': self.feature_extractor,
+    #         'measure': self.measure,
+    #         'k': self.k,
+    #         'normalize': self.normalize
+    #     }
+    #     return params
     
 
 
@@ -619,7 +732,7 @@ class HstackFeatureSet:
 
 
 class FeaturesPOST:
-    def __init__(self, use_idf=True, sublinear_tf=True, norm='l2', savecache='.postcache/dict.pkl', **tfidf_kwargs):
+    def __init__(self, n=(1,4), use_idf=True, sublinear_tf=True, norm='l2', savecache='.postcache/dict.pkl', **tfidf_kwargs):
         #assert language in {'latin', 'spanish'}, 'the requested language is not yet covered'
         # if language == 'latin':
         #     language = 'lat'
@@ -629,11 +742,12 @@ class FeaturesPOST:
         self.norm = norm
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
+        self.n = n
         #self.tagger=spacy.load('la_core_web_lg')
         # self.init_cache()
     
     def __str__(self) -> str:
-        return 'FeaturesPOST'
+        return f'FeaturesPOST [n-gram range: ({self.n[0]},{self.n[1]})]'
 
     # def init_cache(self):
     #     self.changed = False
@@ -654,7 +768,7 @@ class FeaturesPOST:
     #         self.changed = False
 
     def post_analyzer(self, doc):
-        ngram_range = self.tfidf_kwargs.get('ngram_range', (1,4)) # up to quadrigrams
+        ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n)) # up to quadrigrams
         ngram_range = slice(*ngram_range)
         ngram_tags = []
         #processed_doc = NLP(text)
@@ -719,16 +833,17 @@ class FeaturesPOST:
     
 
 class FeaturesDEP:
-    def __init__(self, use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', **tfidf_kwargs):
+    def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', **tfidf_kwargs):
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
         self.norm = norm
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
+        self.n = n
         # self.init_cache()
     
     def __str__(self) -> str:
-        return 'FeaturesDEP'
+        return f'FeaturesDEP [n-gram range: ({self.n[0]},{self.n[1]})]'
 
     # def init_cache(self):
     #     self.changed = False
@@ -749,7 +864,7 @@ class FeaturesDEP:
     #         self.changed = False
 
     def dep_analyzer(self, doc):
-        ngram_range = self.tfidf_kwargs.get('ngram_range', (2,3))
+        ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n))
         ngram_range = slice(*ngram_range)
         ngram_deps = []
         # processed_doc = NLP(text)
