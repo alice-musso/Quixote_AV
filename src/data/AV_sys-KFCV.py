@@ -16,7 +16,7 @@ from nltk import sent_tokenize
 from features import ( 
     DocumentProcessor,
     FeaturesFunctionWords, 
-    FeaturesDVEX, 
+    FeaturesDistortedView, 
     FeaturesMendenhall, 
     FeaturesSentenceLength, 
     FeaturesPOST, 
@@ -32,9 +32,8 @@ from data_loader import remove_citations
 NLP = spacy.load('la_core_web_lg')
 TEST_SIZE=0.2
 RANDOM_STATE = 42
-TARGET='Dante'
 PROCESSED = True
-DEBUG_MODE = False
+DEBUG_MODE  = True
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', remove_test=False, debug_mode=DEBUG_MODE):
@@ -61,7 +60,7 @@ def load_dataset(path ='src/data/Quaestio-corpus', remove_test=False, debug_mode
 #     print('Language model imported.\n')
 
 
-def split(X, y):
+def split(X, y, target):
 
     labels = [label for label, _ in y]
 
@@ -93,8 +92,8 @@ def split(X, y):
             X, y, test_size=TEST_SIZE, stratify=labels, random_state=RANDOM_STATE
         )
     
-    y_dev = [label for label, _ in y_dev_]
-    y_test = [label for label, _ in y_test_]
+    y_dev = [int(label) for label, _ in y_dev_]
+    y_test = [int(label) for label, _ in y_test_]
 
     groups_dev =[title for _, title in y_dev_]
     groups_test =[title for _, title in y_test_]
@@ -104,7 +103,7 @@ def split(X, y):
     pos_docs_idxs2 = [i for i, label in enumerate(y_test) if label == 1]
     pos_group_test = [groups_test[idx] for idx in pos_docs_idxs2]
 
-    print('Target:', TARGET)
+    print('Target:', target)
     print('Positive training examples:')
     print(', '.join([group.split('-')[1][:-2] for group in pos_group_dev])[1:])
     print('\nPositive test examples:')
@@ -125,7 +124,7 @@ def data_partitioner(documents, authors, filenames, target, segment=True):
     #y = [1 if author.rstrip() == target else 0 for author in authors]
     
 
-    X_dev, X_test, y_dev, y_test, groups_dev, groups_test = split(X,y)
+    X_dev, X_test, y_dev, y_test, groups_dev, groups_test = split(X,y, target=target)
 
     if segment:
 
@@ -157,7 +156,7 @@ def data_partitioner(documents, authors, filenames, target, segment=True):
     return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test_entire_docs, groups_test_frag
 
 
-def get_processed_documents(documents, authors, filenames, processed=PROCESSED, cache_file='.cache/processed_ent_docs_cleaned.pkl'):
+def get_processed_documents(documents, authors, filenames, processed=PROCESSED, cache_file='/home/martinaleo/Quaestio_AV/authorship/.cache/processed_ent_docs_cleaned.pkl'):
 
     print('Processing documents.\n')
 
@@ -218,7 +217,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
 
 def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag, y_dev):    #(documents, authors, filenames, nlp, target):
 
-    print('Extracting feature vectors.\n')
+    print('Extracting feature vectors.')
 
     latin_function_words = ['et',  'in',  'de',  'ad',  'non',  'ut', 'cum', 'per', 'a', 'sed', 'que', 'quia', 'ex', 'sic',
                         'si', 'etiam', 'idest', 'nam', 'unde', 'ab', 'uel', 'sicut', 'ita', 'enim', 'scilicet', 'nec',
@@ -231,7 +230,9 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
 
     function_words_vectorizer = FeaturesFunctionWords(function_words=latin_function_words)
     mendenhall_vectorizer = FeaturesMendenhall(upto=20)
-    words_masker = FeaturesDVEX(function_words=latin_function_words)
+    words_masker_SA = FeaturesDistortedView(function_words=latin_function_words, method='DVSA')
+    words_masker_MA = FeaturesDistortedView(function_words=latin_function_words, method='DVMA')
+    words_masker_EX = FeaturesDistortedView(function_words=latin_function_words, method='DVEX')
     sentence_len_extractor = FeaturesSentenceLength()
     POS_vectorizer = FeaturesPOST()
     DEP_vectorizer = FeaturesDEP()
@@ -241,8 +242,10 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
 
 
     vectorizers = [
-            words_masker,
-            #syllabic_quant_extractor,
+            # words_masker_SA,
+            words_masker_MA,
+            # words_masker_EX,
+            syllabic_quant_extractor,
             function_words_vectorizer,
             POS_vectorizer ,
             mendenhall_vectorizer,
@@ -260,16 +263,19 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
 
     for vectorizer in vectorizers:
         #extractor =  FeatureSetReductor(vectorizer)
-        print('Extracting',vectorizer)
+        print('\nExtracting',vectorizer)
 
         reductor =  FeatureSetReductor(vectorizer, k_ratio=0.5)
 
-        features_dev = reductor.fit_transform(processed_docs_dev, y_dev=y_dev)
+        print('\nProcessing development set')
+        features_dev = reductor.fit_transform(processed_docs_dev, y_dev)
         feature_sets_dev.append(features_dev)
 
+        print('\nProcessing test set')
         features_test = reductor.transform(processed_docs_test)
         feature_sets_test.append(features_test)
 
+        print('\nProcessing test set segments')
         features_test_frag = reductor.transform(processed_docs_test_frag)
         feature_sets_test_frag.append(features_test_frag)
         
@@ -282,7 +288,7 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
     return X_dev_stacked, X_test_stacked, X_test_stacked_frag
 
 
-def prepare_data(target=TARGET):
+def prepare_data(target):
     documents, authors, filenames = load_dataset()
     filenames = [filename+'_0' for filename in filenames]
 
@@ -303,11 +309,11 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
 
     groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
 
-    if model_name in ['Linear SVC, Logistic Regressor, Probabilistic SVC']:
+    if model_name in ['Linear SVC', 'Logistic Regressor', 'Probabilistic SVC']:
         param_grid = {'C': np.logspace(-4,4,9)}
     elif model_name == 'Adaboost':
-        param_grid = {'learning_rate': [0.001, 0.01, 0.1, 0.2, 0.5, 0.7, 1.0],
-                      'n_estimators' : [50,100,200,500]}
+        param_grid = {'learning_rate': [1.0],
+                      'n_estimators' : [500]}
 
     grid = GridSearchCV(model,
                         param_grid=param_grid,
@@ -326,11 +332,15 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     return grid.best_estimator_
 
 
-def get_scores(clf, X_test, y_test):
-    print('Evaluating performance...\n')
+def get_scores(clf, X_test, y_test, groups_test):
+    print('Evaluating performance...', '(on fragmented text)' if len(y_test) > 110 else '\n')
 
     y_pred = clf.predict(X_test)
     y_pred=[int(pred) for pred in y_pred]
+    # print('Actual:', [(label, filename) for label,filename in zip(y_test, groups_test)])
+    # print('Predicted:', y_pred)
+    # print()
+
     acc = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)# pos_label='1')
     precision, recall, _, _ = precision_recall_fscore_support(y_test, y_pred, average='binary', zero_division=1.0)
@@ -348,7 +358,7 @@ def get_scores(clf, X_test, y_test):
     print()
     print(classification_report(y_test, y_pred, zero_division=1.0))
     print()
-    print('Confusion matrix: (tn, fp, fn, tp)\n', cf)
+    print('Confusion matrix: (tn, fp, fn, tp)\n', cf, '\n')
 
     # if np.sum(y_test)>1:
     #     print()
@@ -387,13 +397,16 @@ def save_res(target_author, accuracy, f1, cf, model_name, file_name='verifiers_r
     print(f"{model_name} res for author {target_author} saved in file '{file_name}'\n")
 
 
-def build_model(save_results=True):
-    print('Start time:', str(time.localtime()[3]) + ':'+ str(time.localtime()[4]), '\n')
-    print('Building model for author', TARGET + '.\n')
+def build_model(target, save_results=True):
+    hour = '0' + str(time.localtime()[3]) if len(str(time.localtime()[3])) == 1 else str(time.localtime()[3])
+    minutes = '0' + str(time.localtime()[4]) if len(str(time.localtime()[4])) == 1 else str(time.localtime()[4])
+
+    print('Start time:', hour + ':'+ minutes, '\n')
+    print('Building model for author', target + '.\n')
 
     start_time = time.time()
 
-    X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = prepare_data()
+    X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = prepare_data(target=target)
     
     models = [
         #(LinearSVC(random_state=RANDOM_STATE, dual='auto'), 'Linear SVC'),
@@ -405,12 +418,28 @@ def build_model(save_results=True):
     for model, model_name in models:
         print(f'Building {model_name} classifier...\n')
         clf = model_trainer(X_dev, y_dev, groups_dev, model=model, model_name=model_name)
-        acc, f1, cf = get_scores(clf, X_test, y_test)
+        acc, f1, cf = get_scores(clf, X_test, y_test, groups_test)
+        acc_frag, f1_frag, cf_frag = get_scores(clf, X_test_frag, y_test_frag, groups_test_frag)
 
         if save_results:
-            save_res(TARGET, acc, f1, cf, model_name)
+            save_res(target, acc, f1, cf, model_name)
 
-    print(f'Time spent for model building for author {TARGET}:', (time.time() - start_time)/60, 'minutes.')
+    print(f'Time spent for model building for author {target}:', round((time.time() - start_time)/60, 2), 'minutes.')
 
 
-build_model()
+def loop_over_authors():
+    _, authors, _ = load_corpus(path='/home/martinaleo/Quaestio_AV/authorship/src/data/Quaestio-corpus')
+    for author in np.unique(authors):
+        if author not in ['Anonymus', 'Misc']:
+            build_model(target=author)
+
+#loop_over_authors()
+            
+build_model(target='Dante')
+
+# Fitting 5 folds for each of 28 candidates, totalling 140 fits
+# Model fitted. Best params:
+# {'learning_rate': 1.0, 'n_estimators': 500}, sel k con k_ratio=0.5 e segmenti da 500 token
+# 1 tp 2 fn
+# riconosce epistola 12 ma non il devulgari
+
