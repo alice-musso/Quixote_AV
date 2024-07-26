@@ -1,13 +1,18 @@
 import os
+from pathlib import Path
+import pickle
 import time
 from tqdm import tqdm
 import csv
 import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from dro import DistributionalRandomOversampling
 from sklearn.calibration import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_recall_fscore_support, f1_score, confusion_matrix, classification_report, accuracy_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.svm import SVC
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import AdaBoostClassifier
 from data_loader import load_corpus
 from splitting__ import Segmentation
@@ -30,10 +35,16 @@ from features import (
 from data_loader import remove_citations
 
 NLP = spacy.load('la_core_web_lg')
-TEST_SIZE=0.2
+TEST_SIZE = 0.2
+SEGMENT_MIN_TOKEN_SIZE = 1000
 RANDOM_STATE = 42
 PROCESSED = True
-DEBUG_MODE  = True
+OVERSAMPLE = True
+TARGET='Dante'
+PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
+DEBUG_MODE  = False
+
+
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', remove_test=False, debug_mode=DEBUG_MODE):
@@ -114,7 +125,37 @@ def split(X, y, target):
     return X_dev, X_test, y_dev, y_test, groups_dev, groups_test 
 
 
-def data_partitioner(documents, authors, filenames, target, segment=True):
+def oversample_positive_class(X_dev, X_test, y_dev, y_test):
+    y_dev = np.array(y_dev)
+    y_test = np.array(y_test)
+
+    train_nwords = np.asarray(X_dev.sum(axis=1).getA().flatten(), dtype=int)
+    test_nwords = np.asarray(X_test.sum(axis=1).getA().flatten(), dtype=int)
+
+    positives = y_dev.sum()
+    nD = len(y_dev)
+    print('Before oversampling')
+    print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+
+    dro = DistributionalRandomOversampling(rebalance_ratio=0.2)
+    X_dev, y_dev = dro.fit_transform(X_dev, y_dev, train_nwords)
+
+    
+    #samples_test = dro._samples_to_match_ratio(y_test)
+    X_test = dro.transform(X_test, test_nwords, samples=1)
+    #y_test = dro._oversampling_observed(y_test, samples_test)
+
+    positives = y_dev.sum()
+    nD = len(y_dev)
+    print('After oversampling')
+    print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+    print(X_dev.shape, len(y_dev))
+    print(X_test.shape, len(y_test))
+
+    return X_dev, X_test, y_dev, y_test
+
+
+def data_partitioner(documents, authors, filenames, target, segment=True, oversample=True):
     print('Partitioning data.\n')
 
     X = documents
@@ -130,10 +171,10 @@ def data_partitioner(documents, authors, filenames, target, segment=True):
 
         whole_docs_len = len(y_test)
 
-        segmentator_dev = Segmentation(split_policy='by_sentence', tokens_per_fragment=500)
+        segmentator_dev = Segmentation(split_policy='by_sentence', tokens_per_fragment=SEGMENT_MIN_TOKEN_SIZE)
         splitted_docs_dev = segmentator_dev.fit_transform(documents=X_dev, authors=y_dev, filenames=groups_dev)
 
-        segmentator_test = Segmentation(split_policy='by_sentence', tokens_per_fragment=500)
+        segmentator_test = Segmentation(split_policy='by_sentence', tokens_per_fragment=SEGMENT_MIN_TOKEN_SIZE)
         splitted_docs_test = segmentator_test.transform(documents=X_test, authors=y_test, filenames=groups_test)
         groups_test = segmentator_test.groups
 
@@ -288,7 +329,8 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
     return X_dev_stacked, X_test_stacked, X_test_stacked_frag
 
 
-def prepare_data(target):
+def prepare_data(target, oversample=OVERSAMPLE, store_data=True):
+
     documents, authors, filenames = load_dataset()
     filenames = [filename+'_0' for filename in filenames]
 
@@ -301,8 +343,53 @@ def prepare_data(target):
     X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
     X_dev_stacked, X_test_stacked, X_test_stacked_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev)
+    
+    if oversample:
+        X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev_stacked, X_test_stacked, y_dev, y_test)
 
-    return X_dev_stacked, X_test_stacked, y_dev, y_test, X_test_stacked_frag, y_test_frag, groups_dev, groups_test, groups_test_frag
+    if store_data:
+        data = {
+            "X_dev" : X_dev, 
+            "X_test" : X_test, 
+            "y_dev" : y_dev, 
+            "y_test" : y_test,  
+            "X_test_frag" : X_test_stacked_frag, 
+            "y_test_frag" : y_test_frag, 
+            "groups_dev" : groups_dev, 
+            "groups_test" : groups_test, 
+            "groups_test_frag" : groups_test_frag
+        }
+
+        store_partitioned_data(data)
+
+    return X_dev, X_test, y_dev, y_test, X_test_stacked_frag, y_test_frag, groups_dev, groups_test, groups_test_frag
+
+
+def store_partitioned_data(data, cache_file=PARTITIONED_DATA_CACHE_FILE):
+    if os.path.exists(cache_file):
+            return 'Data already stored.'
+    else:
+        print(f'\nStoring partitioned data in {cache_file}\n')
+        cache = {}
+
+        for dataset_name, dataset in data.items():
+            cache[dataset_name] = dataset
+
+        parent = Path(cache_file).parent
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        pickle.dump(cache, open(cache_file, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        print(f'Cache successfully stored in {cache_file}\n')
+
+
+def load_partitioned_data(cache_file=PARTITIONED_DATA_CACHE_FILE):
+    print(f'\nLoading cache from {cache_file}')
+    data = pickle.load(open(cache_file, 'rb'))
+    datasets = []
+    for _, dataset in data.items():
+        datasets.append(dataset)
+    print('Data loaded.\n')
+    return datasets
 
 
 def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
@@ -314,6 +401,9 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     elif model_name == 'Adaboost':
         param_grid = {'learning_rate': [1.0],
                       'n_estimators' : [500]}
+    elif model_name == 'Linear SVC with calibration':
+        param_grid = {'estimator__C': np.logspace(-4,4,9)}
+
 
     grid = GridSearchCV(model,
                         param_grid=param_grid,
@@ -322,7 +412,7 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
                         scoring='f1',
                         verbose=True)    
 
-    grid.fit(X_dev_stacked, y_dev, groups=groups_dev)
+    grid.fit(X_dev_stacked, y_dev)#, groups=groups_dev)
 
     print('Model fitted. Best params:')
     print(grid.best_params_)
@@ -397,7 +487,8 @@ def save_res(target_author, accuracy, f1, cf, model_name, file_name='verifiers_r
     print(f"{model_name} res for author {target_author} saved in file '{file_name}'\n")
 
 
-def build_model(target, save_results=True):
+def build_model(target, save_results=True, load_data=True):
+
     hour = '0' + str(time.localtime()[3]) if len(str(time.localtime()[3])) == 1 else str(time.localtime()[3])
     minutes = '0' + str(time.localtime()[4]) if len(str(time.localtime()[4])) == 1 else str(time.localtime()[4])
 
@@ -406,12 +497,16 @@ def build_model(target, save_results=True):
 
     start_time = time.time()
 
-    X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = prepare_data(target=target)
+    if load_data:
+         X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = load_partitioned_data()
+    else:
+        X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = prepare_data(target=target)
     
     models = [
-        #(LinearSVC(random_state=RANDOM_STATE, dual='auto'), 'Linear SVC'),
-        #(LogisticRegression(random_state=RANDOM_STATE, n_jobs=-1), 'Logistic Regressor'),
-        #(SVC(kernel='linear', probability=True, random_state=RANDOM_STATE), 'Probabilistic SVC')
+        (LinearSVC(random_state=RANDOM_STATE, dual='auto'), 'Linear SVC'),
+        (LogisticRegression(random_state=RANDOM_STATE, n_jobs=-1), 'Logistic Regressor'),
+        (SVC(kernel='linear', probability=True, random_state=RANDOM_STATE), 'Probabilistic SVC'),
+        (CalibratedClassifierCV(estimator=LinearSVC(random_state=RANDOM_STATE, dual='auto'), cv=5, n_jobs=-1), 'Linear SVC with calibration'),
         (AdaBoostClassifier(random_state=RANDOM_STATE), 'Adaboost')
     ]
 
@@ -419,7 +514,7 @@ def build_model(target, save_results=True):
         print(f'Building {model_name} classifier...\n')
         clf = model_trainer(X_dev, y_dev, groups_dev, model=model, model_name=model_name)
         acc, f1, cf = get_scores(clf, X_test, y_test, groups_test)
-        acc_frag, f1_frag, cf_frag = get_scores(clf, X_test_frag, y_test_frag, groups_test_frag)
+        # acc_frag, f1_frag, cf_frag = get_scores(clf, X_test_frag, y_test_frag, groups_test_frag)
 
         if save_results:
             save_res(target, acc, f1, cf, model_name)
@@ -435,11 +530,10 @@ def loop_over_authors():
 
 #loop_over_authors()
             
-build_model(target='Dante')
+build_model(target=TARGET)
 
 # Fitting 5 folds for each of 28 candidates, totalling 140 fits
 # Model fitted. Best params:
 # {'learning_rate': 1.0, 'n_estimators': 500}, sel k con k_ratio=0.5 e segmenti da 500 token
 # 1 tp 2 fn
 # riconosce epistola 12 ma non il devulgari
-
