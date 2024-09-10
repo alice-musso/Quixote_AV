@@ -49,7 +49,8 @@ class Segmentation:
                 authors_fragments.extend([authors[i]] * len(text_fragments))
 
         self.groups = self.add_idx(groups)
-        return fragments, authors_fragments, groups
+        return fragments, authors_fragments
+    
     
     def add_idx(self,filenames):
         count = {}
@@ -72,7 +73,7 @@ class Segmentation:
         return [t.strip() for t in text.split('\n') if t.strip()]
 
     def _split_by_sentences(self, text):
-        sentences = [t.strip() for t in nltk.tokenize.sent_tokenize(text) if t.strip()]
+        sentences = [t for t in nltk.tokenize.sent_tokenize(text)]
         for i, sentence in enumerate(sentences):
             n_tokens = len(tokenize(sentence))
             if n_tokens < self.min_tokens:
@@ -93,17 +94,17 @@ class Segmentation:
     #         new_fragments.append(' '.join(text_fragments[offset:offset+window_size]))
     #     return new_fragments
     
-    def __windows(self, text_fragments, tokens_per_fragment):
-        new_fragments = []
-        for fragment in text_fragments:
-            if len(word_tokenize(fragment)) < tokens_per_fragment:
-                if not new_fragments: 
-                        new_fragments.append(fragment)
-                else:
-                    new_fragments[-1] += ' ' + fragment
-            else:
-                new_fragments.append(fragment)
-        return new_fragments
+    # def __windows(self, text_fragments, tokens_per_fragment):
+    #     new_fragments = []
+    #     for fragment in text_fragments:
+    #         if len(word_tokenize(fragment)) < tokens_per_fragment:
+    #             if not new_fragments: 
+    #                     new_fragments.append(fragment)
+    #             else:
+    #                 new_fragments[-1] += ' ' + fragment
+    #         else:
+    #             new_fragments.append(fragment)
+    #     return new_fragments
     
     def _windows(self, text_fragments, tokens_per_fragment):
         new_fragments = []
