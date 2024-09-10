@@ -6,13 +6,14 @@ from glob import glob, escape
 from pathlib import Path
 from itertools import chain
 from tqdm import tqdm
+import re
 
 
 # ------------------------------------------------------------------------
 # document loading routine
 # ------------------------------------------------------------------------
 def remove_pattern(doc, start_symbol, end_symbol, counter):
-    assert counter[start_symbol] == counter[end_symbol], 'wrong number of {}{} found'.format(start_symbol,end_symbol)
+    #assert counter[start_symbol] == counter[end_symbol], 'wrong number of {}{} found'.format(start_symbol,end_symbol)
     search = True
     while search:
         start = doc.find(start_symbol)
@@ -23,14 +24,56 @@ def remove_pattern(doc, start_symbol, end_symbol, counter):
             search = False
     return doc
 
+def clean_texts(text):
+    text = re.sub("\n+", " ", text)
+    text = re.sub("\s+", " ", text)
+    text = re.sub('\*.*?\*', "", text)
+    text = re.sub('\{.*?\}', "", text)
+    text = re.sub('[0-9]', "", text)
+    text = re.sub("\n+", " ", text)
+    text = re.sub("\s+", " ", text)
+    text = text.lower()
+    text = text.replace('v', 'u')
+    text = text.replace('j', 'i')
+    text = re.sub('\.\s+(?=\.)|\.\.+', "", text)
+    text = re.sub("\n+", " ", text)
+    text = re.sub("\s+", " ", text)
+    text = re.sub("\(|\)|\[|\]", "", text)
+    text = re.sub("\—|\–|\-|\_", "", text)
+    text = re.sub("\‹|\›|\»|\«|\=|\/|\\|\~|\§|\*|\#|\@|\^|\“|\”|\‘|\’", "", text)
+    text = re.sub("\&dagger;|\&amacr;|\&emacr;|\&imacr;|\&omacr;|\&umacr;|\&lsquo;|\&rsquo;|\&rang;|\&lang;|\&lsqb;", "", text)
+    text = re.sub("\?|\!|\:|\;", ".", text)
+    text = text.replace("'", "")
+    text = text.replace('"', '')
+    text = text.replace(".,", ".")
+    text = text.replace(",.", ".")
+    text = text.replace(" .", ".")
+    text = text.replace(" ,", ",")
+    text = re.sub('(\.)+', ".", text)
+    text = re.sub('(\,)+', "", text)
+    text = text.replace("á", "a")
+    text = text.replace("é", "e")
+    text = text.replace("í", "i")
+    text = text.replace("ó", "o")
+    text = text.replace("ç", "")
+    text = re.sub("\n+", " ", text)
+    text = re.sub("\s+", " ", text)
+    return text
+
 
 # removes citations in format:
 #    *latino*
 #    {volgare}
-def remove_citations(doc):
+def  remove_citations(doc, clean_text=False):
     counter = collections.Counter(doc)
     doc = remove_pattern(doc, start_symbol='*', end_symbol='*', counter=counter)
     doc = remove_pattern(doc, start_symbol='{', end_symbol='}', counter=counter)
+
+    doc = ' '.join(doc.split())
+    doc = doc.lower()
+
+    # if clean_text:
+    #     clean_texts()
     return doc
 
 
@@ -105,7 +148,7 @@ def load_quaestio_corpus(path):
     return documents, authors, filenames
 
 
-def load_corpus(path):
+def load_corpus(path, remove_epistles=False, remove_test=True, remove_egloghe=False):
     filenames = []
     authors = []
     documents = []
@@ -113,16 +156,53 @@ def load_corpus(path):
     dirs = os.listdir(path)
     for file in tqdm(dirs, total=len(dirs), desc='loading: ' + path):
         if file.endswith('txt'):
+            
+            if remove_epistles:
+                files_removed = 0
+                if 'epistola' in file.lower():
+                    print('removing', file)
+                    files_removed += 1
+                    continue
+            
+            if remove_egloghe:
 
+                if 'egloga' in file.lower():
+                    print('removing egloga', file)
+                    continue
+
+            if remove_test:
+                if ' quaestio' in file.lower():
+                    print('removing test document', file)
+                    continue
+            
+            # if 'monarchie' in file.lower():
+            #         print('removing document', file)
+            #         continue
+            
+
+            # if 'monarchia_i' in file.lower() and 'monarchia_i.txt' not in file.lower():
+            #         print('removing monarchia document', file)
+            #         continue
+            
             file_name = file.replace('.txt','')
             author, textname = file_name.split('-')
             text = open(join(path,file), encoding= "utf8", errors='ignore').read()
-            #text = remove_citations(text) # da rivedere
 
+            #cleaning
+            text = re.sub('\{[^{}]*\}', "", text)
+            text = re.sub('\*[^**]*\*', "", text)
+            text=text.lower()
+            text=text.strip()
+            text = text.replace('\x00', '') #remove null bytes
+            text = re.sub('<\w>(.*?)</\w>', '\1', text)
+            #text = remove_citations(text) # da rivedere
+   
             documents.append(text)
             filenames.append(file_name)
             authors.append(author.strip())
             ndocs += 1
+    print('Total documents:', len(documents))
+    print('Total authors:', len(list(set(authors))))
 
 
     return documents, authors, filenames
