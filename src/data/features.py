@@ -29,7 +29,7 @@ from string import punctuation
 
 
 class DocumentProcessor:
-    def __init__(self, language_model=None, savecache='.cache/processed_docs_data.pkl'):
+    def __init__(self, language_model=None, savecache='.cache/processed_docs_cleaned.pkl'):
         self.nlp = language_model
         self.savecache = savecache
         self.init_cache()
@@ -49,6 +49,16 @@ class DocumentProcessor:
             if parent:
                 os.makedirs(parent, exist_ok=True)
             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
+    def delete_doc(self, filename):
+        removed_doc = self.cache.pop(filename, None)
+        if removed_doc is not None:
+            print(f'Removed {filename} from cache')
+            self.save_cache()  # Salva la cache aggiornata dopo l'eliminazione
+        
+        else:
+            print(f'{filename} not found in cache')
+            
 
     # def _process_documents(self, documents, filenames):
     #     processed_docs = []
@@ -81,12 +91,12 @@ class DocumentProcessor:
 
 class FeaturesDistortedView:
 
-    def __init__(self, function_words, method, **tfidf_kwargs):
+    def __init__(self, function_words, method, ngram_range=(1,3), **tfidf_kwargs):
         assert method in {'DVEX', 'DVMA', 'DVSA'}, 'text distortion method not valid'
         self.function_words = function_words
         self.tfidf_kwargs = tfidf_kwargs
         self.method = method
-        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        self.vectorizer = TfidfVectorizer(ngram_range=ngram_range, min_df=1, **self.tfidf_kwargs)
         
 
     def __str__(self) -> str:
@@ -100,7 +110,6 @@ class FeaturesDistortedView:
 
     def fit(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
-        
         self.vectorizer.fit(distortions)
         return self
 
@@ -232,7 +241,8 @@ class FeaturesSyllabicQuantities:
         return features
     
 
-    def metric_scansion(self, documents):
+    def metric_scansion(self, documents, filenames=None):
+        #documents = [self.remove_invalid_word(doc, filename) for doc, filename in zip(documents, filenames)]
         documents = [self.remove_invalid_word(doc) for doc in documents]
             
         macronizer = Macronizer('tag_ngram_123_backoff')
@@ -244,11 +254,12 @@ class FeaturesSyllabicQuantities:
         scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
         return scanned_texts
     
-    def remove_invalid_word(self, document):
+    def remove_invalid_word(self, document, filename):
         # todo: salvare i numeri romani, i numeri
         legal_words=[]
         vowels = set('aeiouāēīōū')
         tokens = [token.text for token in document]
+        illegal_tokens=[]
 
         for token in tokens:
             token = token.lstrip()
@@ -268,8 +279,17 @@ class FeaturesSyllabicQuantities:
                 ):
                     legal_words.append(token)
 
-            # if token not in legal_words:
-            #     print('Invalid word entry:', token)
+            if token not in legal_words:
+                illegal_tokens.append(token)
+        
+        if filename:
+
+            with open("illegal_words.txt", "a") as file:
+                file.write(f"{filename}\n")
+                file.write(f"{str(document)[:50]}\n")
+                file.write(f"{illegal_tokens}\n")
+                file.write("\n")
+                
 
         return ' '.join(legal_words)
 
@@ -445,164 +465,7 @@ class FeaturesPunctuation:
         return self.vectorizer.fit_transform(raw_documents)
 
 
-# class FeaturesPOST:
-#     def __init__(self, language, use_idf=True, sublinear_tf=True, norm='l2', savecache='.postcache/dict.pkl', **tfidf_kwargs):
-#         #assert language in {'latin', 'spanish'}, 'the requested language is not yet covered'
-#         if language == 'latin':
-#             language = 'lat'
-#         self.language = language
-#         self.use_idf = use_idf
-#         self.sublinear_tf = sublinear_tf
-#         self.norm = norm
-#         self.tfidf_kwargs = tfidf_kwargs
-#         self.savecache = savecache
-#         self.init_cache()
-    
-#     def __str__(self) -> str:
-#         return 'FeaturesPOST'
 
-#     def init_cache(self):
-#         self.changed = False
-#         if self.savecache is None or not os.path.exists(self.savecache):
-#             print('cache not found, initializing from scratch')
-#             self.cache = {}
-#         else:
-#             print(f'loading cache from {self.savecache}')
-#             self.cache = pickle.load(open(self.savecache, 'rb'))
-
-#     def save_cache(self):
-#         if self.savecache is not None and self.changed:
-#             print(f'storing POST cache in {self.savecache}')
-#             parent = Path(self.savecache).parent
-#             if parent:
-#                 os.makedirs(parent, exist_ok=True)
-#             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-#             self.changed = False
-
-#     def post_analyzer(self, text):
-#         ngram_range = self.tfidf_kwargs.get('ngram_range', (1,4)) # up to quadrigrams
-#         ngram_range = slice(*ngram_range)
-#         tags = []
-#         for sentence in nltk.tokenize.sent_tokenize(text):
-#             sentence_wordtags = self.get_postags(sentence)
-#             sentence_unigram_tags = [tag[0] if tag != 'Unk' else 'Unk' for _, tag in sentence_wordtags] #prima tag[0]
-#             for n in list(range(ngram_range.start, ngram_range.stop+1)):
-#                 sentence_ngram_tags = ['-'.join(ngram) for ngram in list(ngrams(sentence_unigram_tags, n))]
-#                 tags.extend(sentence_ngram_tags)
-#         # print('+', end='')
-#         return tags
-
-#     def get_postags(self, sentence):
-#         if sentence in self.cache:
-#             tags = self.cache[sentence]
-#         else:
-#             #tags = self.tagger.tag_tnt(sentence) # sostituire con spicy
-#             processed_sent = self.tagger(sentence)
-#             tags = [(str(token), token.pos_)  for token in processed_sent]
-#             self.cache[sentence] = tags
-#             self.changed = True
-#         return tags
-
-#     def fit(self, documents, y=None):
-#         #self.tagger = POSTag(self.language) # sostituire con spacy
-#         self.tagger = spacy.load( 'es_core_news_md')
-#         self.vectorizer = TfidfVectorizer(
-#             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
-#         self.vectorizer.fit(documents)
-#         self.save_cache()
-#         return self
-
-#     def transform(self, documents, y=None):
-#         post_features = self.vectorizer.transform(documents)
-#         self.save_cache()
-#         return post_features
-
-#     def fit_transform(self, documents, y=None):
-#         #self.tagger = POSTag(self.language) # sostituire con spicy
-#         self.tagger = spacy.load( 'es_core_news_md')
-#         self.vectorizer = TfidfVectorizer(
-#             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
-#         post_features = self.vectorizer.fit_transform(documents)
-#         self.save_cache()
-#         return post_features
-    
-
-# class FeaturesDEP:
-#     def __init__(self, use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', **tfidf_kwargs):
-#         self.use_idf = use_idf
-#         self.sublinear_tf = sublinear_tf
-#         self.norm = norm
-#         self.tfidf_kwargs = tfidf_kwargs
-#         self.savecache = savecache
-#         self.init_cache()
-    
-#     def __str__(self) -> str:
-#         return 'FeaturesDEP'
-
-#     def init_cache(self):
-#         self.changed = False
-#         if self.savecache is None or not os.path.exists(self.savecache):
-#             print('cache not found, initializing from scratch')
-#             self.cache = {}
-#         else:
-#             print(f'loading cache from {self.savecache}')
-#             self.cache = pickle.load(open(self.savecache, 'rb'))
-
-#     def save_cache(self):
-#         if self.savecache is not None and self.changed:
-#             print(f'storing DEP cache in {self.savecache}')
-#             parent = Path(self.savecache).parent
-#             if parent:
-#                 os.makedirs(parent, exist_ok=True)
-#             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-#             self.changed = False
-
-#     def dep_analyzer(self, text):
-#         ngram_range = self.tfidf_kwargs.get('ngram_range', (2,3))
-#         ngram_range = slice(*ngram_range)
-#         deps = []
-#         for sentence in nltk.tokenize.sent_tokenize(text):
-#             sentence_deps = self.get_dependencies(sentence)
-#             sentence_unigram_deps = [dep[0] for _, dep in sentence_deps] #prima tag[0]
-#             for n in list(range(ngram_range.start, ngram_range.stop+1)):
-#                 sentence_ngram_deps = ['-'.join(ngram) for ngram in list(ngrams(sentence_unigram_deps, n))]
-#                 deps.extend(sentence_ngram_deps)
-#         # print('+', end='')
-#         return deps
-
-#     def get_dependencies(self, sentence):
-#         if sentence in self.cache:
-#             dependencies = self.cache[sentence]
-#         else:
-#             #tags = self.tagger.tag_tnt(sentence) # sostituire con spicy
-#             processed_sent = self.tagger(sentence)
-#             dependencies = [(str(token), token.dep_)  for token in processed_sent]
-#             self.cache[sentence] = dependencies
-#             self.changed = True
-#         return dependencies
-
-#     def fit(self, documents, y=None):
-#         #self.tagger = POSTag(self.language) # sostituire con spacy
-#         self.tagger = spacy.load( 'es_core_news_md')
-#         self.vectorizer = TfidfVectorizer(
-#             analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
-#         self.vectorizer.fit(documents)
-#         self.save_cache()
-#         return self
-
-#     def transform(self, documents, y=None):
-#         dep_features = self.vectorizer.transform(documents)
-#         self.save_cache()
-#         return dep_features
-
-#     def fit_transform(self, documents, y=None):
-#         #self.tagger = POSTag(self.language) # sostituire con spicy
-#         self.tagger = spacy.load( 'es_core_news_md')
-#         self.vectorizer = TfidfVectorizer(
-#             analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
-#         dep_features = self.vectorizer.fit_transform(documents)
-#         self.save_cache()
-#         return dep_features
     
 
 class FeatureSetReductor:
@@ -663,7 +526,7 @@ class FeatureSetReductor:
 
         self.feat_sel = SelectKBest(self.measure, k=self.k)
 
-        print(self)
+        #print(self)
         print('features in:', features_in, 'k:', self.k)
         print()
 
@@ -676,33 +539,6 @@ class FeatureSetReductor:
 
         return matrix_red
     
-
-    # def set_params(self, **params):
-    #     for key, value in params.items():
-    #         setattr(self, key, value)
-            
-    #         if key == 'measure':
-    #             self.feat_sel = SelectKBest(value, k=self.k)
-    #         elif key == 'k_ratio':
-    #             self.feat_sel.k_ratio = value
-    #         elif key == 'normalize':
-    #             if value:
-    #                 self.normalizer = Normalizer()
-    #             else:
-    #                 self.normalizer = None
-    #     return self
-    
-    # def get_params(self, deep=True):
-    #     params = {
-    #         'feature_extractor': self.feature_extractor,
-    #         'measure': self.measure,
-    #         'k': self.k,
-    #         'normalize': self.normalize
-    #     }
-    #     return params
-    
-
-
 
 class HstackFeatureSet:
     def __init__(self, feats=None, *vectorizers):
