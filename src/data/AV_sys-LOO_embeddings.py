@@ -35,6 +35,7 @@ from features import (
     FeaturesSyllabicQuantities
 )
 from data_loader import remove_citations
+from embeddings_extraction import load_embeddings
 from mapie.classification import MapieClassifier
 
 NLP = spacy.load('la_core_web_lg')
@@ -48,9 +49,7 @@ OVERSAMPLE = True
 TARGET='Dante'
 PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
 DEBUG_MODE  = False
-
-TEST_DOCUMENT = 'dante - quaestio'
-REMOVE_TEST=False if TEST_DOCUMENT == 'dante - quaestio' else True
+REMOVE_TEST = False
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
@@ -292,7 +291,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
     return processed_X
 
 
-def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag, y_dev):    #(documents, authors, filenames, nlp, target):
+def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag, y_dev, test_document):    #(documents, authors, filenames, nlp, target):
 
     print('Extracting feature vectors.')
 
@@ -327,8 +326,8 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
             # POS_vectorizer ,
             mendenhall_vectorizer,
             # DEP_vectorizer,
-            # sentence_len_extractor, 
-            # punct_vectorizer,
+            sentence_len_extractor,
+            punct_vectorizer,
             char_extractor     
         ]
     
@@ -355,14 +354,37 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
         print('\nProcessing test set segments')
         features_test_frag = reductor.transform(processed_docs_test_frag)
         feature_sets_test_frag.append(features_test_frag)
-        
+
+    # elimina dai documenti test document e relativi segmenti
+    # includi nel test solo test_doc_0 (eventualmente gli altri in frag)
+
+    document_embeddings = load_embeddings('/home/martinaleo/Quaestio_AV/authorship/src/data/document_embeddings/document_embeddings_segmented_docs.pkl', reshape=True, remove_test=REMOVE_TEST)
+    document_embeddings_test = document_embeddings[test_document[0][:-2]]
+    #docs_to_remove = [doc for doc in list(document_embeddings.keys()) if test_document[0].split('_')[0] in doc]
+    docs_to_remove = [doc for doc in list(document_embeddings.keys()) if doc.startswith(test_document[0].split('_')[0] + '_')]
+
+    # if DEBUG_MODE:
+    #     docs_to_remove2 = [doc for doc in list(document_embeddings.keys()) if '_'.join(doc.split('_')[:2]) not in groups_dev]
+    for doc in docs_to_remove:
+        document_embeddings.pop(doc)
+    #document_embeddings.pop('_'.join(test_document[0].split('_')[:2])) #removing test document
+    document_embeddings_dev = document_embeddings
+    document_embeddings_dev = np.array(list(document_embeddings_dev.values()), dtype=np.float64)
+
+    print(document_embeddings_dev.shape)
+    
+    feature_sets_dev.append(document_embeddings_dev)
+    feature_sets_test.append(np.array(document_embeddings_test))
+    feature_sets_test_frag.append(np.array(document_embeddings_test))
+
+
     X_dev_stacked = hstacker._hstack(feature_sets_dev)
     X_test_stacked = hstacker._hstack(feature_sets_test)
-    X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
+    #X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
 
     print('\nFeature vectors extracted.\n')
     
-    return X_dev_stacked, X_test_stacked, X_test_stacked_frag
+    return X_dev_stacked, X_test_stacked#, X_test_stacked_frag
 
 
 # def prepare_data(target, oversample=OVERSAMPLE, store_data=True):
@@ -552,12 +574,14 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
 
     for i, (doc, ylabel) in enumerate(zip(documents,y)):
         #if i in idx_dante:
-        if TEST_DOCUMENT in filenames[i].lower(): # target text ' quaestio'
+        if ' quaestio' in filenames[i].lower(): # target text ' quaestio'
             start_time_single_iteration = time.time()
 
             # LOO_split(i, X, y, doc, ylabel, filenames)
             X_dev, X_test, y_dev, y_test, groups_dev, groups_test = LOO_split(i, documents, y, doc, ylabel, filenames)
 
+            print(groups_test)
+            
             # segment_data(X_dev, X_test, y_dev, y_test, groups_dev, groups_test)
 
             X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = segment_data(X_dev, X_test, y_dev, y_test, groups_dev, groups_test)
@@ -566,7 +590,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
             X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
             X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
-            X_dev, X_test, X_test_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev)
+            X_dev, X_test = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev, groups_test)
             
             if oversample:
                 X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
@@ -605,4 +629,8 @@ def loop_over_authors():
             
 build_model(target=TARGET)
 
-# quaestio negativa se dvma con min df 1 e no punteggiatura (si smote)
+# Fitting 5 folds for each of 28 candidates, totalling 140 fits
+# Model fitted. Best params:
+# {'learning_rate': 1.0, 'n_estimators': 500}, sel k con k_ratio=0.5 e segmenti da 500 token
+# 1 tp 2 fn
+# riconosce epistola 12 ma non il devulgari

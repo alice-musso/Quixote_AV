@@ -44,19 +44,16 @@ RANDOM_STATE = 42
 PROCESSED = False # whether the linguistic features have been already extracted or not
 LOAD_DATA = False # whether the vector space representation have been already obtained or not
 K_RATIO = 1.0
-OVERSAMPLE = True
+OVERSAMPLE = False
 TARGET='Dante'
 PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
 DEBUG_MODE  = False
-
-TEST_DOCUMENT = 'dante - quaestio'
-REMOVE_TEST=False if TEST_DOCUMENT == 'dante - quaestio' else True
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
     print('Loading data.\n')
 
-    documents, authors, filenames = load_corpus(path=path, remove_epistles=False, remove_test=REMOVE_TEST, remove_egloghe=False)
+    documents, authors, filenames = load_corpus(path=path, remove_epistles=False, remove_test=True, remove_egloghe=False)
 
     if debug_mode:
         documents, authors, filenames = documents[:10], authors[:10], filenames[:10]
@@ -186,7 +183,7 @@ def LOO_split(i, X, y, doc, ylabel, filenames):
     doc_name = filenames[i]
     print('Test document:', doc_name)
     X_test = [doc]
-    y_test = [int(ylabel)]
+    y_test = [ylabel]
     X_dev = list(np.delete(X, i))
     y_dev = list(np.delete(y, i))
     groups_dev = list(np.delete(filenames, i))
@@ -327,7 +324,7 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
             # POS_vectorizer ,
             mendenhall_vectorizer,
             # DEP_vectorizer,
-            # sentence_len_extractor, 
+            # sentence_len_extractor,
             # punct_vectorizer,
             char_extractor     
         ]
@@ -459,23 +456,30 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     return grid.best_estimator_
 
 
-def get_scores(clf, X_test, y_test, groups_test, return_proba=True):
-    print('Evaluating performance...', '(on fragmented text)' if len(y_test) > 110 else '\n')
+def get_scores(clf, X_test, y_test, groups_test, y_dev,return_proba=True):
+    print('Evaluating performance...', '(on fragmented text)\n' if len(y_test) > 110 else '\n')
 
     y_pred = clf.predict(X_test)
-    y_pred=[int(pred) for pred in y_pred]
-    print('Actual:', [(i, (label, filename)) for i,(label,filename) in enumerate(zip(y_test, groups_test)) if label==1])
-    print('Predicted:', [(i, pred) for i, pred in enumerate(y_pred) if pred == 1])
+    print('Actual:', y_test)
+    print('Predicted:', y_pred)
     print()
 
     if return_proba:
         probabilities = clf.predict_proba(X_test)
         posterior_proba = max(probabilities[0])
         print('Posterior probability:', max(probabilities[0]))
+
+        class_labels = clf.classes_
+        sorted_probs = sorted(zip(class_labels, probabilities[0]), key=lambda x: x[1], reverse=True)
+            
+        print("  Probabilities (sorted):")
+        for label, prob in sorted_probs:
+            print(f"{label}: {prob:.4f}")
+        print()
         
     acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)# pos_label='1')
-    precision, recall, _, _ = precision_recall_fscore_support(y_test, y_pred, average='binary', zero_division=1.0)
+    f1 = f1_score(y_test, y_pred, average='macro', zero_division=1.0)# pos_label='1')
+    precision, recall, _, _ = precision_recall_fscore_support(y_test, y_pred, average='macro', zero_division=1.0)
     cf = confusion_matrix(y_test, y_pred).ravel() #(tn, fp, fn, tp)
 
     if len(y_test) == 1:
@@ -546,13 +550,13 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
 
 
     processed_documents = get_processed_documents(documents, authors, filenames)
-    y = [1 if author.rstrip() == target else 0 for author in authors]
+    y = [author for author in authors]
 
     idx_dante=[31,3,40,17,41,18,32,38,63,39,36,37,62,64]
 
     for i, (doc, ylabel) in enumerate(zip(documents,y)):
         #if i in idx_dante:
-        if TEST_DOCUMENT in filenames[i].lower(): # target text ' quaestio'
+        if 'monarchia' in filenames[i].lower(): # target text ' quaestio'
             start_time_single_iteration = time.time()
 
             # LOO_split(i, X, y, doc, ylabel, filenames)
@@ -583,7 +587,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
             for model, model_name in models:
                 print(f'\nBuilding {model_name} classifier...\n')
                 clf = model_trainer(X_dev, y_dev, groups_dev, model=model, model_name=model_name)
-                acc, f1, cf, posterior_proba = get_scores(clf, X_test, y_test, groups_test)
+                acc, f1, cf, posterior_proba = get_scores(clf, X_test, y_test, groups_test, y_dev)
                 # acc_frag, f1_frag, cf_frag = get_scores(clf, X_test_frag, y_test_frag, groups_test_frag)
 
 
@@ -605,4 +609,8 @@ def loop_over_authors():
             
 build_model(target=TARGET)
 
-# quaestio negativa se dvma con min df 1 e no punteggiatura (si smote)
+# Fitting 5 folds for each of 28 candidates, totalling 140 fits
+# Model fitted. Best params:
+# {'learning_rate': 1.0, 'n_estimators': 500}, sel k con k_ratio=0.5 e segmenti da 500 token
+# 1 tp 2 fn
+# riconosce epistola 12 ma non il devulgari
