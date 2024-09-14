@@ -7,6 +7,7 @@ import csv
 import numpy as np
 from collections import Counter
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from scipy.sparse import hstack, vstack, issparse
 from dro import DistributionalRandomOversampling
 from imblearn.over_sampling import BorderlineSMOTE, ADASYN
 from sklearn.calibration import LinearSVC
@@ -19,8 +20,9 @@ from sklearn.ensemble import AdaBoostClassifier
 from data_loader import load_corpus
 from splitting__ import Segmentation
 import spacy
+import nltk
 from nltk import sent_tokenize
-from features import ( 
+from data.features import ( 
     DocumentProcessor,
     FeaturesFunctionWords, 
     FeaturesDistortedView, 
@@ -39,27 +41,31 @@ from mapie.classification import MapieClassifier
 
 NLP = spacy.load('la_core_web_lg')
 #TEST_SIZE = 0.3
+N_JOBS = 32
 SEGMENT_MIN_TOKEN_SIZE = 400
 RANDOM_STATE = 42
 PROCESSED = False # whether the linguistic features have been already extracted or not
 LOAD_DATA = False # whether the vector space representation have been already obtained or not
 K_RATIO = 1.0
-OVERSAMPLE = True
+OVERSAMPLE = False
 TARGET='Dante'
 PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
 DEBUG_MODE  = False
 
-TEST_DOCUMENT = 'dante - quaestio'
+TEST_DOCUMENT = 'dante - '
+
 REMOVE_TEST=False if TEST_DOCUMENT == 'dante - quaestio' else True
+REMOVE_EGLOGHE = False
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
     print('Loading data.\n')
 
-    documents, authors, filenames = load_corpus(path=path, remove_epistles=False, remove_test=REMOVE_TEST, remove_egloghe=False)
+    documents, authors, filenames = load_corpus(path=path, remove_epistles=False, remove_test=REMOVE_TEST, remove_egloghe=REMOVE_EGLOGHE)
 
     if debug_mode:
-        documents, authors, filenames = documents[:10], authors[:10], filenames[:10]
+        documents, authors, filenames = documents[:100], authors[:100], filenames[:100]
+        print(filenames)
 
     print('Data loaded.\n')
 
@@ -232,7 +238,7 @@ def segment_data(X_dev, X_test, y_dev, y_test, groups_dev, groups_test):
     return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test_entire_docs, groups_test_frag
 
 
-def get_processed_documents(documents, authors, filenames, processed=PROCESSED, cache_file='/home/martinaleo/Quaestio_AV/authorship/.cache/processed_docs_def.pkl'): #processed_ent_docs_cleaned
+def get_processed_documents(documents, authors, filenames, processed=PROCESSED, cache_file='/home/martinaleo/.ssh/Quaestio_AV/.cache/processed_docs_def.pkl'): 
 
     print('Processing documents.\n')
 
@@ -292,7 +298,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
     return processed_X
 
 
-def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_docs_test_frag, y_dev):    #(documents, authors, filenames, nlp, target):
+def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev):    #(documents, authors, filenames, nlp, target):
 
     print('Extracting feature vectors.')
 
@@ -305,16 +311,16 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
                         'postea', 'nunquam']
 
 
-    function_words_vectorizer = FeaturesFunctionWords(function_words=latin_function_words)
+    function_words_vectorizer = FeaturesFunctionWords(function_words=latin_function_words, ngram_range=(1,3))
     mendenhall_vectorizer = FeaturesMendenhall(upto=20)
     words_masker_SA = FeaturesDistortedView(function_words=latin_function_words, method='DVSA')
     words_masker_MA = FeaturesDistortedView(function_words=latin_function_words, method='DVMA')
     words_masker_EX = FeaturesDistortedView(function_words=latin_function_words, method='DVEX')
     sentence_len_extractor = FeaturesSentenceLength()
-    POS_vectorizer = FeaturesPOST()
-    DEP_vectorizer = FeaturesDEP()
-    punct_vectorizer = FeaturesPunctuation()
-    char_extractor = FeaturesCharNGram(n=(2,3))
+    POS_vectorizer = FeaturesPOST(n=(1,1))
+    DEP_vectorizer = FeaturesDEP(n=(1,1))
+    punct_vectorizer = FeaturesPunctuation(ngram_range=(1,1))
+    char_extractor = FeaturesCharNGram(n=(2,3)) #2,3
     syllabic_quant_extractor = FeaturesSyllabicQuantities()
 
 
@@ -323,12 +329,12 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
             words_masker_MA,
             # words_masker_EX,
             # syllabic_quant_extractor,
-            # function_words_vectorizer,
-            # POS_vectorizer ,
+            function_words_vectorizer,
+            #POS_vectorizer ,
             mendenhall_vectorizer,
-            # DEP_vectorizer,
-            # sentence_len_extractor, 
-            # punct_vectorizer,
+            #DEP_vectorizer,
+            #sentence_len_extractor, 
+            #punct_vectorizer,
             char_extractor     
         ]
     
@@ -338,6 +344,8 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
     feature_sets_test = []
     feature_sets_test_frag = []
 
+    # dense_feature_sets = []
+
     for vectorizer in vectorizers:
         #extractor =  FeatureSetReductor(vectorizer)
         print('\nExtracting',vectorizer)
@@ -345,24 +353,43 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, processed_d
         reductor =  FeatureSetReductor(vectorizer, k_ratio=K_RATIO)
 
         print('\nProcessing development set')
-        features_dev = reductor.fit_transform(processed_docs_dev, y_dev)
-        feature_sets_dev.append(features_dev)
+        features_set_dev = reductor.fit_transform(processed_docs_dev, y_dev)
+        #feature_sets_dev.append(features_set_dev)
 
         print('\nProcessing test set')
-        features_test = reductor.transform(processed_docs_test)
-        feature_sets_test.append(features_test)
+        features_set_test = reductor.transform(processed_docs_test)
+        #feature_sets_test.append(features_set_test)
 
-        print('\nProcessing test set segments')
-        features_test_frag = reductor.transform(processed_docs_test_frag)
-        feature_sets_test_frag.append(features_test_frag)
+        #print('\nProcessing test set segments')
+        #features_test_frag = reductor.transform(processed_docs_test_frag)
+        #feature_sets_test_frag.append(features_test_frag)
+
+        features_set_dev_oversampled, y_dev_oversampled, features_set_test_oversampled = reductor.oversample_DRO(Xtr=features_set_dev, ytr=y_dev, Xte=features_set_test)
+        feature_sets_dev.append(features_set_dev_oversampled)
+        feature_sets_test.append(features_set_test_oversampled)
+        #feature_sets_test_frag.append(features_test_frag)
+
+        # if issparse(featureS_set_dev):
+        #   feature_set_dev_oversampled, feature_set_test_oversampled, y_dev_oversampled = reductor.oversample(features_set_dev, features_set_test, y_dev)
+        #   feature_sets_dev_oversampled.append(feature_set_dev_oversampled)
+        #   feature_sets_test_oversampled.append(feature_set_test_oversampled)
+        # else:
+        #     dense_feature_sets.append(feature_sets_dev)
         
     X_dev_stacked = hstacker._hstack(feature_sets_dev)
     X_test_stacked = hstacker._hstack(feature_sets_test)
-    X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
+    #X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
 
     print('\nFeature vectors extracted.\n')
+
+    print('Vector document final shape:')
+    print(X_dev_stacked.shape)
+
+    # if oversample:
+    #     if issparse():
+    #     oversample()
     
-    return X_dev_stacked, X_test_stacked, X_test_stacked_frag
+    return X_dev_stacked, X_test_stacked, y_dev_oversampled
 
 
 # def prepare_data(target, oversample=OVERSAMPLE, store_data=True):
@@ -433,7 +460,7 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
 
     if model_name in ['Linear SVC', 'Logistic Regressor', 'Probabilistic SVC']:
-        param_grid = {'C': np.logspace(-4,4,9)}
+        param_grid = {'C': [10000.0]} 
     elif model_name == 'Adaboost':
         param_grid = {'learning_rate': [1.0],
                       'n_estimators' : [50],
@@ -445,11 +472,12 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     grid = GridSearchCV(model,
                         param_grid=param_grid,
                         cv=5,
-                        n_jobs=-1,
+                        n_jobs=N_JOBS,
                         scoring='accuracy',
-                        verbose=True)    
+                        verbose=True,
+                        )    
 
-    grid.fit(X_dev_stacked, y_dev)#, groups=groups_dev)
+    grid.fit(X_dev_stacked, y_dev)# ,groups=groups_dev)
 
     print('Model fitted. Best params:')
     print(grid.best_params_)
@@ -505,8 +533,8 @@ def get_scores(clf, X_test, y_test, groups_test, return_proba=True):
     return acc, f1, cf, posterior_proba
 
 
-def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_LOO_best_config3.csv'):
-    path= '/home/martinaleo/Quaestio_AV/authorship/src/data/hold_out_res'
+def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_dro.csv'):
+    path= '/home/martinaleo/.ssh/Quaestio_AV/src/data/LOO_res'
     print(f'Saving results in {file_name}\n')
 
     os.chdir(path)
@@ -554,6 +582,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
         #if i in idx_dante:
         if TEST_DOCUMENT in filenames[i].lower(): # target text ' quaestio'
             start_time_single_iteration = time.time()
+            np.random.seed(0)
 
             # LOO_split(i, X, y, doc, ylabel, filenames)
             X_dev, X_test, y_dev, y_test, groups_dev, groups_test = LOO_split(i, documents, y, doc, ylabel, filenames)
@@ -566,15 +595,15 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
             X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
             X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
-            X_dev, X_test, X_test_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev)
+            X_dev, X_test, y_dev = extract_feature_vectors(X_dev_processed, X_test_processed, y_dev)
             
-            if oversample:
-                X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
+            # if oversample:
+            #     X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
         
         
             models = [
                 # (LinearSVC(random_state=RANDOM_STATE, dual='auto'), 'Linear SVC'),
-                (LogisticRegression(random_state=RANDOM_STATE, n_jobs=-1), 'Logistic Regressor'),
+                (LogisticRegression(random_state=RANDOM_STATE, n_jobs=N_JOBS), 'Logistic Regressor'),
                 # (SVC(kernel='linear', probability=True, random_state=RANDOM_STATE), 'Probabilistic SVC'),
                 # (CalibratedClassifierCV(estimator=LinearSVC(random_state=RANDOM_STATE, dual='auto'), cv=5, n_jobs=-1), 'Linear SVC with calibration'),
                 #(AdaBoostClassifier(estimator=LinearSVC(random_state=RANDOM_STATE, dual='auto'), algorithm='SAMME', random_state=RANDOM_STATE), 'Adaboost')
@@ -605,4 +634,6 @@ def loop_over_authors():
             
 build_model(target=TARGET)
 
+
 # quaestio negativa se dvma con min df 1 e no punteggiatura (si smote)
+# 10000.0, 1000.0, {'C': 1000.0}

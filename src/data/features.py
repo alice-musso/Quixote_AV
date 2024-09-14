@@ -1,8 +1,13 @@
 import os
 from pathlib import Path
 import re
+
+from sklearn.exceptions import NotFittedError
 from data_loader import clean_texts
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+#from pydro.src.dro import DistributionalRandomOversampling 
+from dro import DistributionalRandomOversampling
+from sklearn.utils.validation import check_is_fitted
 import nltk
 import string
 from scipy.sparse import hstack, csr_matrix, issparse
@@ -91,21 +96,24 @@ class DocumentProcessor:
 
 class FeaturesDistortedView:
 
-    def __init__(self, function_words, method, ngram_range=(1,3), **tfidf_kwargs):
+    def __init__(self, function_words, method, ngram_range=(1,1), **tfidf_kwargs):
         assert method in {'DVEX', 'DVMA', 'DVSA'}, 'text distortion method not valid'
         self.function_words = function_words
+        self.ngram_range = ngram_range
         self.tfidf_kwargs = tfidf_kwargs
         self.method = method
-        self.vectorizer = TfidfVectorizer(ngram_range=ngram_range, min_df=1, **self.tfidf_kwargs)
-        
+        self.counter = CountVectorizer()
+        self.vectorizer = TfidfVectorizer(ngram_range=self.ngram_range, **self.tfidf_kwargs)
+        self.training_words = []
 
     def __str__(self) -> str:
+        ngram_range_str = f' [n-gram range: {self.ngram_range}]'
         if self.method=='DVEX':
-            return 'FeaturesDVEX'
+            return 'FeaturesDVEX'+ ngram_range_str
         if self.method=='DVMA':
-            return 'FeaturesDVMA'
+            return 'FeaturesDVMA'+ ngram_range_str
         if self.method=='DVSA':
-            return 'FeaturesDVSA'
+            return 'FeaturesDVSA'+ ngram_range_str
 
 
     def fit(self, documents, y=None):
@@ -116,6 +124,7 @@ class FeaturesDistortedView:
 
     def transform(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
+        self.count_words(distortions)
         features = self.vectorizer.transform(distortions)
         features_num = features.shape[1]
         # print(f'Vectorizer: {FeaturesDVEX}')
@@ -125,6 +134,7 @@ class FeaturesDistortedView:
 
     def fit_transform(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
+        self.count_words(distortions)
         features = self.vectorizer.fit_transform(distortions)
         # features_num = features.shape[1]
 
@@ -140,6 +150,15 @@ class FeaturesDistortedView:
         elif method =='DVSA':
             dis_texts = self.dis_DVSA(documents)
         return dis_texts
+    
+    def count_words(self, texts):
+        if not hasattr(self, 'n_training_terms'):
+           self.training_words = self.counter.fit_transform(texts) 
+           self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            self.test_words = self.counter.transform(texts)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
+
 
 
     # DV-MA text distortion method from Stamatatos_2018:
@@ -208,20 +227,25 @@ class FeaturesDistortedView:
 
 class FeaturesSyllabicQuantities:
 
-    def __init__(self, min_range=1,max_range=1, **tfidf_kwargs):
+    def __init__(self, min_range=1,max_range=1, ngram_range=(1,1), **tfidf_kwargs):
         self.tfidf_kwargs = tfidf_kwargs
         self.min_range = min_range
         self.max_range = max_range
+        self.ngram_range = ngram_range
+        self.vectorizer = TfidfVectorizer(ngram_range=self.ngram_range, **self.tfidf_kwargs)
+        self.counter = CountVectorizer()
         
 
     def __str__(self) -> str:
-        return 'FeaturesSyllabicQuantities'
+        ngram_range_str = f' [n-gram range: {self.ngram_range}]'
+        return 'FeaturesSyllabicQuantities' + ngram_range_str
 
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
         scanned_texts = self.metric_scansion(documents)
-        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        #self.count_syllabic_quantities(scanned_texts)
+        #self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
         self.vectorizer.fit(scanned_texts)
         return self
 
@@ -229,6 +253,7 @@ class FeaturesSyllabicQuantities:
     def transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
         scanned_texts = self.metric_scansion(documents)
+        self.count_syllabic_quantities(scanned_texts)
         features = self.vectorizer.transform(scanned_texts)
         return features
     
@@ -236,7 +261,8 @@ class FeaturesSyllabicQuantities:
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
         scanned_texts = self.metric_scansion(documents)
-        self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+        self.count_syllabic_quantities(scanned_texts)
+        # self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
         features = self.vectorizer.fit_transform(scanned_texts)
         return features
     
@@ -254,7 +280,7 @@ class FeaturesSyllabicQuantities:
         scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
         return scanned_texts
     
-    def remove_invalid_word(self, document, filename):
+    def remove_invalid_word(self, document, filename=None):
         # todo: salvare i numeri romani, i numeri
         legal_words=[]
         vowels = set('aeiouāēīōū')
@@ -293,6 +319,14 @@ class FeaturesSyllabicQuantities:
 
         return ' '.join(legal_words)
 
+
+    def count_syllabic_quantities(self, texts):
+        if not hasattr(self, 'n_training_terms'):
+            self.training_words = self.counter.fit_transform(texts) 
+            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            self.test_words = self.counter.transform(texts)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
     
 
 class FeaturesMendenhall:
@@ -373,6 +407,7 @@ class FeaturesCharNGram:
         self.n = n
         self.sublinear_tf = sublinear_tf
         self.norm = norm
+        self.counter = CountVectorizer(analyzer='char', ngram_range=self.n, min_df=3)
     
     def __str__(self) -> str:
         return f'FeaturesCharNGram [n-gram range: ({self.n[0]},{self.n[1]})]'
@@ -384,42 +419,61 @@ class FeaturesCharNGram:
 
     def transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        self.count_ngrams(raw_documents)
         return self.vectorizer.transform(raw_documents)
 
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        self.count_ngrams(raw_documents)
         self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n), use_idf=False, norm=self.norm, min_df=3)
         return self.vectorizer.fit_transform(raw_documents)
+
+    
+    def count_ngrams(self, texts):
+        #raw_texts = [doc.text for doc in texts]
+        if not hasattr(self, 'n_training_terms'):
+            self.training_ngrams = self.counter.fit_transform(texts)
+            self.n_training_terms = self.training_ngrams.sum(axis=1).getA().flatten()
+        else:
+            # Trasforma i nuovi testi e calcola il numero di n-grams
+            self.test_ngrams = self.counter.transform(texts)
+            self.n_test_terms = self.test_ngrams.sum(axis=1).getA().flatten()
 
 
 class FeaturesFunctionWords:
 
-    def __init__(self, function_words, use_idf=False, sublinear_tf=False, norm='l1'):
+    def __init__(self, function_words, use_idf=False, sublinear_tf=False, norm='l1', ngram_range=(1,3)):
         # assert language in {'latin', 'spanish'}, 'the requested language is not yet covered'
-        # self.language = languageƒ
+        # self.language = language
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
         self.norm = norm
         self.function_words=function_words
+        self.ngram_range=ngram_range
+        self.counter = CountVectorizer(vocabulary=self.function_words, min_df=1)
     
     def __str__(self) -> str:
-        return 'FeaturesFunctionWords'
+        ngram_range_str = f' [n-gram range: {self.ngram_range}]'
+        return 'FeaturesFunctionWords' + ngram_range_str
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        
         #function_words = get_function_words(self.language)
         self.vectorizer = TfidfVectorizer(
-            vocabulary=self.function_words, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm)
+            vocabulary=self.function_words, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, ngram_range=self.ngram_range)
         self.vectorizer.fit(raw_documents)
         return self
 
     def transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        self.count_words(raw_documents)
         return self.vectorizer.transform(raw_documents)
 
     def fit_transform(self, documents, y=None):
         #function_words = get_function_words(self.language)
         raw_documents = [doc.text for doc in documents]
+        self.count_words(raw_documents)
         self.vectorizer = TfidfVectorizer(
             vocabulary=self.function_words, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm)
         
@@ -430,31 +484,45 @@ class FeaturesFunctionWords:
         # print('Features:', features_num)
         return features
     
+    def count_words(self, texts):
+        if not hasattr(self, 'n_training_terms'):
+            self.training_words = self.counter.fit_transform(texts)
+            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            # Trasforma i nuovi testi e calcola il numero di n-grams
+            self.test_words = self.counter.transform(texts)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
+    
 
 class FeaturesPunctuation:
 
-    def __init__(self, sublinear_tf=False, norm='l1'):
+    def __init__(self, sublinear_tf=False, norm='l1', ngram_range=(1,3)):
         self.sublinear_tf = sublinear_tf
         self.norm = norm
         self.punctuation=punctuation
+        self.ngram_range = ngram_range
+        self.counter = CountVectorizer(vocabulary=self.punctuation, min_df=1)
         # self.punctuation = "¡!\"#$%&'()*+,-./:;<=>¿?@[\\]^_`{|}~"
     
     def __str__(self) -> str:
-        return 'FeaturesPunctuation'
+        ngram_range_str = f' [n-gram range: {self.ngram_range}]'
+        return 'FeaturesPunctuation' + ngram_range_str
 
     def fit(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
 
-        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3)
+        self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=self.ngram_range)
         self.vectorizer.fit(raw_documents)
         return self
 
     def transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        self.count_words(raw_documents)
         return self.vectorizer.transform(raw_documents)
 
     def fit_transform(self, documents, y=None):
         raw_documents = [doc.text for doc in documents]
+        self.count_words(raw_documents)
         
         self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=(1,1))
 
@@ -464,45 +532,37 @@ class FeaturesPunctuation:
         # print('Features:', features_num)
         return self.vectorizer.fit_transform(raw_documents)
 
+    def count_words(self, texts):
+        if not hasattr(self, 'n_training_terms'):
+            self.training_words = self.counter.fit_transform(texts)
+            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            # Trasforma i nuovi testi e calcola il numero di n-grams
+            self.test_words = self.counter.transform(texts)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
+
 
 
     
 
 class FeatureSetReductor:
-    def __init__(self, feature_extractor, measure=chi2, k=100, k_ratio=1.0, normalize=True):
+    def __init__(self, feature_extractor, measure=chi2, k=100, k_ratio=1.0, normalize=True, oversample=True):
         self.feature_extractor = feature_extractor
         self.k = k
         self.k_ratio = k_ratio
         self.measure = measure
         self.normalize = normalize 
+        self.oversample = oversample
+        self.is_sparse = True
         if self.normalize:
             self.normalizer = Normalizer()
-    
+        
     def __str__(self) -> str:
         return( f'FeatureSetReductor for {self.feature_extractor}' )
 
 
     def fit(self, documents, y_dev=None):
         return self.feature_extractor.fit(documents, y_dev)
-        # features_in = matrix.shape[1]
-
-        # if features_in < self.k:
-        #     self.k = features_in
-        #     self.feat_sel = SelectKBest(self.measure, k='all')
-        # else:
-        #     #self.k = round(features_in * 0.1) #keep 10% of features
-        #     self.k = round(features_in * self.k_ratio) #keep k_ratio% of features
-        #     self.feat_sel = SelectKBest(self.measure, k=self.k)
-
-        # if self.normalize:
-        #     self.normalizer.fit(matrix)
-
-        # self.feat_sel.fit(matrix, y_dev)
-
-        # print(self)
-        # print('features in:', features_in, 'k:', self.k)
-        # print()
-        # return self
 
     def transform(self, documents, y_dev=None):
         matrix = self.feature_extractor.transform(documents)
@@ -539,6 +599,74 @@ class FeatureSetReductor:
 
         return matrix_red
     
+    def oversample_DRO(self, Xtr, ytr, Xte):
+        if not isinstance(ytr, np.ndarray):
+            ytr = np.array(ytr)
+        self.dro = DistributionalRandomOversampling(rebalance_ratio=0.2)
+        samples = self.dro._samples_to_match_ratio(ytr)
+        y_oversampled = self.dro._oversampling_observed(ytr, samples)
+        y_examples_generated = y_oversampled[len(ytr):]
+
+        n_examples = samples.sum() - len(ytr)
+
+        if hasattr(self.feature_extractor, 'n_training_terms'):
+            print('Oversampling positive class using DRO method')
+
+            #self.dro = DistributionalRandomOversampling(rebalance_ratio=0.2)
+            self.n_training_terms =  self.feature_extractor.n_training_terms
+            self.n_test_terms = self.feature_extractor.n_test_terms
+
+            # print('Training terms: ', self.n_training_terms)
+            # print('Test terms: ', self.n_test_terms)
+
+            positives = ytr.sum()
+            nD = len(ytr) 
+
+            print('Before oversampling')
+            print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+
+            Xtr, ytr = self.dro.fit_transform(Xtr, ytr, self.n_training_terms)
+            Xte = self.dro.transform(Xte, self.n_test_terms, samples=1)
+
+            positives = ytr.sum()
+            nD = len(ytr)
+            print('After oversampling')
+            print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+            print(Xtr.shape, len(ytr))
+            print(Xte.shape)
+            return Xtr, ytr, Xte
+        
+        else:
+            print('Calculating the mean to match oversampled data')
+            vectors_per_author = dict() 
+            auth_mean_vect_norm = dict()
+
+            for vect, label in zip(Xtr, ytr):
+                if label in vectors_per_author:
+                    vectors_per_author[label].append(vect)
+                else:
+                    vectors_per_author[label] = [vect]
+
+            for key in vectors_per_author.keys():
+                mean_vect = np.mean(vectors_per_author[key], axis=0)
+                norm_vect = mean_vect / np.linalg.norm(mean_vect)
+                auth_mean_vect_norm[key] = norm_vect
+            #return auth_mean_vect_norm
+
+            start_idx = len(y_oversampled) - len(y_examples_generated) 
+            new_vectors = [auth_mean_vect_norm[label] for label in y_oversampled[start_idx:]]
+            Xtr = np.vstack([Xtr] + new_vectors)
+
+            print(Xtr.shape, len(y_oversampled))
+            print(Xte.shape)
+
+            return Xtr, y_oversampled, Xte
+
+            # for label in ytr[start_idx:]:
+            #     Xtr = list(Xtr)
+            #     Xtr.append(auth_mean_vect_norm[label])
+            #     start_idx+=1
+
 
 class HstackFeatureSet:
     def __init__(self, feats=None, *vectorizers):
@@ -579,29 +707,13 @@ class FeaturesPOST:
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
         self.n = n
+        self.counter = CountVectorizer(analyzer=self.post_analyzer)
         #self.tagger=spacy.load('la_core_web_lg')
         # self.init_cache()
     
     def __str__(self) -> str:
         return f'FeaturesPOST [n-gram range: ({self.n[0]},{self.n[1]})]'
 
-    # def init_cache(self):
-    #     self.changed = False
-    #     if self.savecache is None or not os.path.exists(self.savecache):
-    #         print('cache not found, initializing from scratch')
-    #         self.cache = {}
-    #     else:
-    #         print(f'loading cache from {self.savecache}')
-    #         self.cache = pickle.load(open(self.savecache, 'rb'))
-
-    # def save_cache(self):
-    #     if self.savecache is not None and self.changed:
-    #         print(f'storing POST cache in {self.savecache}')
-    #         parent = Path(self.savecache).parent
-    #         if parent:
-    #             os.makedirs(parent, exist_ok=True)
-    #         pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-    #         self.changed = False
 
     def post_analyzer(self, doc):
         ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n)) # up to quadrigrams
@@ -623,20 +735,11 @@ class FeaturesPOST:
         # print('+', end='')
         return ngram_tags
 
-    # def get_postags(self, sentence):
-    #     if sentence in self.cache:
-    #         tags = self.cache[sentence]
-    #     else:
-    #         #tags = self.tagger.tag_tnt(sentence) # sostituire con spicy
-    #         processed_sent = self.tagger(sentence)
-    #         tags = [(str(token), token.pos_)  for token in processed_sent]
-    #         self.cache[sentence] = tags
-    #         self.changed = True
-    #     return tags
 
     def fit(self, documents, y=None):
         #self.tagger = POSTag(self.language) 
         #self.tagger = spacy.load('la_core_web_lg')
+        self.count_pos_tags(documents)
         self.vectorizer = TfidfVectorizer(
             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         self.vectorizer.fit(documents)
@@ -644,6 +747,7 @@ class FeaturesPOST:
         return self
 
     def transform(self, documents, y=None):
+        self.count_pos_tags(documents)
         post_features = self.vectorizer.transform(documents)
         # self.save_cache()
 
@@ -656,6 +760,7 @@ class FeaturesPOST:
     def fit_transform(self, documents, y=None):
         #self.tagger = POSTag(self.language) # sostituire con spicy
         #self.tagger = spacy.load('la_core_web_lg')
+        self.count_pos_tags(documents)
         self.vectorizer = TfidfVectorizer(
             analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         post_features = self.vectorizer.fit_transform(documents)
@@ -666,6 +771,15 @@ class FeaturesPOST:
         # print(f'Vectorizer: {self}')
         # print('Features:', features_num)
         return post_features
+
+    def count_pos_tags(self, documents):
+        if not hasattr(self, 'n_training_terms'):
+            self.training_words = self.counter.fit_transform(documents)
+            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            # Trasforma i nuovi testi e calcola il numero di n-grams
+            self.test_words = self.counter.transform(documents)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
     
 
 class FeaturesDEP:
@@ -676,28 +790,12 @@ class FeaturesDEP:
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
         self.n = n
+        self.counter = CountVectorizer(analyzer=self.dep_analyzer)
         # self.init_cache()
     
     def __str__(self) -> str:
         return f'FeaturesDEP [n-gram range: ({self.n[0]},{self.n[1]})]'
-
-    # def init_cache(self):
-    #     self.changed = False
-    #     if self.savecache is None or not os.path.exists(self.savecache):
-    #         print('cache not found, initializing from scratch')
-    #         self.cache = {}
-    #     else:
-    #         print(f'loading cache from {self.savecache}')
-    #         self.cache = pickle.load(open(self.savecache, 'rb'))
-
-    # def save_cache(self):
-    #     if self.savecache is not None and self.changed:
-    #         print(f'storing DEP cache in {self.savecache}')
-    #         parent = Path(self.savecache).parent
-    #         if parent:
-    #             os.makedirs(parent, exist_ok=True)
-    #         pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-    #         self.changed = False
+    
 
     def dep_analyzer(self, doc):
         ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n))
@@ -716,16 +814,6 @@ class FeaturesDEP:
         return ngram_deps
 
 
-    # def get_dependencies(self, sentence):
-    #     if sentence in self.cache:
-    #         dependencies = self.cache[sentence]
-    #     else:
-    #         #tags = self.tagger.tag_tnt(sentence) # sostituire con spicy
-    #         processed_sent = self.tagger(sentence)
-    #         dependencies = [(str(token), token.dep_)  for token in processed_sent]
-    #         self.cache[sentence] = dependencies
-    #         self.changed = True
-    #     return dependencies
 
     def fit(self, documents, y=None):
         #self.tagger = POSTag(self.language) # sostituire con spacy
@@ -737,6 +825,7 @@ class FeaturesDEP:
         return self
 
     def transform(self, documents, y=None):
+        self.count_deps(documents)
         dep_features = self.vectorizer.transform(documents)
         #self.save_cache()
 
@@ -749,6 +838,7 @@ class FeaturesDEP:
     def fit_transform(self, documents, y=None):
         #self.tagger = POSTag(self.language) # sostituire con spicy
         #self.tagger = spacy.load( 'la_core_web_lg')
+        self.count_deps(documents)
         self.vectorizer = TfidfVectorizer(
             analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
         dep_features = self.vectorizer.fit_transform(documents)
@@ -759,3 +849,60 @@ class FeaturesDEP:
         # print(f'Vectorizer: {self}')
         # print('Features:', features_num)
         return dep_features
+    
+    def count_deps(self, documents):
+        if not hasattr(self, 'n_training_terms'):
+            self.training_words = self.counter.fit_transform(documents)
+            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+        else:
+            # Trasforma i nuovi testi e calcola il numero di n-grams
+            self.test_words = self.counter.transform(documents)
+            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
+
+
+
+# def oversample_DRO(self, Xtr, ytr, Xte, yte, n_trining_terms, n_test_terms):
+#     is_sparse = issparse(Xtr)
+#     if is_sparse:
+
+#         print('Oversampling positive class using DRO method')
+
+#         positives = ytr.sum()
+#         nD = len(ytr) 
+
+#         print('Before oversampling')
+#         print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+
+#         Xtr, ytr = self.dro.fit_transform(Xtr, ytr, self.n_training_terms)
+#         Xte = self.dro.transform(Xte, self.n_test_terms, samples=1)
+
+#         positives = ytr.sum()
+#         nD = len(ytr)
+#         print('After oversampling')
+#         print(f'positives = {positives} (prevalence={positives*100/nD:.2f}%)')
+#         print(Xtr.shape, len(ytr))
+#         print(Xte.shape, len(yte))
+
+# def oversample_with_mean(Xtr, ytr, Xtr_, ytr_, start_idx):
+
+#     if not issparse(Xtr):
+#         # returns a dict (keys=label, values=mean_vect)
+#         print('Calculating the mean to match oversampled data')
+#         auth_mean_vect = dict() 
+#         auth_mean_vect_norm = dict()
+
+#         for vect, label in zip(Xtr, ytr):
+#             if label in auth_mean_vect:
+#                 auth_mean_vect[label].append(vect)
+#             else:
+#                 auth_mean_vect[label] = [vect]
+
+#         for key in auth_mean_vect.keys():
+#             mean_vect = np.mean(auth_mean_vect[key], axis=0)
+#             norm_vect = mean_vect / np.linalg.norm(mean_vect)
+#             auth_mean_vect_norm[key] =  norm_vect
+
+#         for vect_, label_ in zip(Xtr_[start_idx:], ytr_[start_idx:]):
+#             vect = hstack([vect_, auth_mean_vect_norm[label]])
+
+#         #start_idx = Xtr.shape[0]
