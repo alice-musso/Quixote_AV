@@ -604,8 +604,9 @@ class FeatureSetReductor:
             ytr = np.array(ytr)
         self.dro = DistributionalRandomOversampling(rebalance_ratio=0.2)
         samples = self.dro._samples_to_match_ratio(ytr)
+        original_indices = self.dro.get_original_indices(Xtr, samples)
         y_oversampled = self.dro._oversampling_observed(ytr, samples)
-        y_examples_generated = y_oversampled[len(ytr):]
+        #y_examples_generated = y_oversampled[len(ytr):]
 
         n_examples = samples.sum() - len(ytr)
 
@@ -637,30 +638,33 @@ class FeatureSetReductor:
             return Xtr, ytr, Xte
         
         else:
-            print('Calculating the mean to match oversampled data')
-            vectors_per_author = dict() 
-            auth_mean_vect_norm = dict()
+            print('Duplicating vectors to match oversampled data')
+            Xtr_oversampled = [Xtr[i] for i in original_indices]
+            y_oversampled = [ytr[i] for i in original_indices]
+            
+            # vectors_per_author = dict() 
+            # auth_mean_vect_norm = dict()
 
-            for vect, label in zip(Xtr, ytr):
-                if label in vectors_per_author:
-                    vectors_per_author[label].append(vect)
-                else:
-                    vectors_per_author[label] = [vect]
+            # for vect, label in zip(Xtr, ytr):
+            #     if label in vectors_per_author:
+            #         vectors_per_author[label].append(vect)
+            #     else:
+            #         vectors_per_author[label] = [vect]
 
-            for key in vectors_per_author.keys():
-                mean_vect = np.mean(vectors_per_author[key], axis=0)
-                norm_vect = mean_vect / np.linalg.norm(mean_vect)
-                auth_mean_vect_norm[key] = norm_vect
-            #return auth_mean_vect_norm
+            # for key in vectors_per_author.keys():
+            #     mean_vect = np.mean(vectors_per_author[key], axis=0)
+            #     norm_vect = mean_vect / np.linalg.norm(mean_vect)
+            #     auth_mean_vect_norm[key] = norm_vect
+            # #return auth_mean_vect_norm
 
-            start_idx = len(y_oversampled) - len(y_examples_generated) 
-            new_vectors = [auth_mean_vect_norm[label] for label in y_oversampled[start_idx:]]
-            Xtr = np.vstack([Xtr] + new_vectors)
+            # start_idx = len(y_oversampled) - len(y_examples_generated) 
+            # new_vectors = [auth_mean_vect_norm[label] for label in y_oversampled[start_idx:]]
+            # Xtr = np.vstack([Xtr] + new_vectors)
 
-            print(Xtr.shape, len(y_oversampled))
-            print(Xte.shape)
+            # print(Xtr.shape, len(y_oversampled))
+            # print(Xte.shape)
 
-            return Xtr, y_oversampled, Xte
+            return Xtr_oversampled, y_oversampled, Xte
 
             # for label in ytr[start_idx:]:
             #     Xtr = list(Xtr)
