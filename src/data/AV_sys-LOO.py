@@ -22,7 +22,7 @@ from splitting__ import Segmentation
 import spacy
 import nltk
 from nltk import sent_tokenize
-from data.features import ( 
+from features import ( 
     DocumentProcessor,
     FeaturesFunctionWords, 
     FeaturesDistortedView, 
@@ -38,6 +38,7 @@ from data.features import (
 )
 from data_loader import remove_citations
 from mapie.classification import MapieClassifier
+#from embeddings_extraction import load_embeddings, get_author_embeddings
 
 NLP = spacy.load('la_core_web_lg')
 #TEST_SIZE = 0.3
@@ -52,7 +53,7 @@ TARGET='Dante'
 PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
 DEBUG_MODE  = False
 
-TEST_DOCUMENT = 'dante - '
+TEST_DOCUMENT = 'dante - monarchia'
 
 REMOVE_TEST=False if TEST_DOCUMENT == 'dante - quaestio' else True
 REMOVE_EGLOGHE = False
@@ -298,7 +299,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
     return processed_X
 
 
-def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev):    #(documents, authors, filenames, nlp, target):
+def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, test_document=None, extract_embeddings=False):    #(documents, authors, filenames, nlp, target):
 
     print('Extracting feature vectors.')
 
@@ -368,13 +369,6 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev):    
         feature_sets_dev.append(features_set_dev_oversampled)
         feature_sets_test.append(features_set_test_oversampled)
         #feature_sets_test_frag.append(features_test_frag)
-
-        # if issparse(featureS_set_dev):
-        #   feature_set_dev_oversampled, feature_set_test_oversampled, y_dev_oversampled = reductor.oversample(features_set_dev, features_set_test, y_dev)
-        #   feature_sets_dev_oversampled.append(feature_set_dev_oversampled)
-        #   feature_sets_test_oversampled.append(feature_set_test_oversampled)
-        # else:
-        #     dense_feature_sets.append(feature_sets_dev)
         
     X_dev_stacked = hstacker._hstack(feature_sets_dev)
     X_test_stacked = hstacker._hstack(feature_sets_test)
@@ -390,42 +384,6 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev):    
     #     oversample()
     
     return X_dev_stacked, X_test_stacked, y_dev_oversampled
-
-
-# def prepare_data(target, oversample=OVERSAMPLE, store_data=True):
-
-#     # documents, authors, filenames = load_dataset()
-#     # filenames = [filename+'_0' for filename in filenames]
-
-#     # processed_documents = get_processed_documents(documents, authors, filenames)
-
-#     X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag = data_partitioner(documents, authors, filenames, target=target)
-
-#     X_dev_processed = get_processed_segments(processed_documents, X_dev, groups_dev, dataset='training')
-#     X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
-#     X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
-
-#     X_dev, X_test, X_test_frag = extract_feature_vectors(X_dev_processed, X_test_processed, X_test_frag_processed, y_dev)
-    
-#     if oversample:
-#         X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
-
-#     if store_data:
-#         data = {
-#             "X_dev" : X_dev, 
-#             "X_test" : X_test, 
-#             "y_dev" : y_dev, 
-#             "y_test" : y_test,  
-#             "X_test_frag" : X_test_frag, 
-#             "y_test_frag" : y_test_frag, 
-#             "groups_dev" : groups_dev, 
-#             "groups_test" : groups_test, 
-#             "groups_test_frag" : groups_test_frag
-#         }
-
-#         store_partitioned_data(data)
-
-#     return X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, groups_dev, groups_test, groups_test_frag
 
 
 def store_partitioned_data(data, cache_file=PARTITIONED_DATA_CACHE_FILE):
@@ -460,7 +418,7 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
     groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
 
     if model_name in ['Linear SVC', 'Logistic Regressor', 'Probabilistic SVC']:
-        param_grid = {'C': [10000.0]} 
+        param_grid = {'C': np.logspace(-4,4,9)} 
     elif model_name == 'Adaboost':
         param_grid = {'learning_rate': [1.0],
                       'n_estimators' : [50],
@@ -533,7 +491,7 @@ def get_scores(clf, X_test, y_test, groups_test, return_proba=True):
     return acc, f1, cf, posterior_proba
 
 
-def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_dro.csv'):
+def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_dro_total_authors.csv'):
     path= '/home/martinaleo/.ssh/Quaestio_AV/src/data/LOO_res'
     print(f'Saving results in {file_name}\n')
 
@@ -595,7 +553,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
             X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
             X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
-            X_dev, X_test, y_dev = extract_feature_vectors(X_dev_processed, X_test_processed, y_dev)
+            X_dev, X_test, y_dev = extract_feature_vectors(X_dev_processed, X_test_processed, y_dev, groups_test)
             
             # if oversample:
             #     X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
