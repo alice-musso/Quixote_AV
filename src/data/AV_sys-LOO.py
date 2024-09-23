@@ -6,14 +6,13 @@ from tqdm import tqdm
 import csv
 import numpy as np
 from collections import Counter
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from scipy.sparse import hstack, vstack, issparse
 from dro import DistributionalRandomOversampling
 from imblearn.over_sampling import BorderlineSMOTE, ADASYN
 from sklearn.calibration import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_recall_fscore_support, f1_score, confusion_matrix, classification_report, accuracy_score
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, GroupKFold, StratifiedGroupKFold, train_test_split
 from sklearn.svm import SVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import AdaBoostClassifier
@@ -38,7 +37,7 @@ from features import (
 )
 from data_loader import remove_citations
 from mapie.classification import MapieClassifier
-#from embeddings_extraction import load_embeddings, get_author_embeddings
+from embeddings_extraction import load_embeddings
 
 NLP = spacy.load('la_core_web_lg')
 #TEST_SIZE = 0.3
@@ -48,15 +47,17 @@ RANDOM_STATE = 42
 PROCESSED = False # whether the linguistic features have been already extracted or not
 LOAD_DATA = False # whether the vector space representation have been already obtained or not
 K_RATIO = 1.0
-OVERSAMPLE = False
+OVERSAMPLE = True
 TARGET='Dante'
 PARTITIONED_DATA_CACHE_FILE = f'.partitioned_data_cache/partitioned_data_{TARGET}.pkl'
 DEBUG_MODE  = False
 
-TEST_DOCUMENT = 'dante - monarchia'
+TEST_DOCUMENT = 'giovanniboccaccio - epistola8'
 
 REMOVE_TEST=False if TEST_DOCUMENT == 'dante - quaestio' else True
-REMOVE_EGLOGHE = False
+REMOVE_EGLOGHE = True
+EXTRACT_EMBEDDINGS=True
+
 
 
 def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
@@ -78,68 +79,6 @@ def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
     # documents = [remove_citations(doc) for doc in documents]
 
     return documents, authors, filenames
-
-
-# def initialize_language_model(max_length):
-#     print('Setting up language model.\n')
-
-#     NLP.max_length = max_length #1364544
-
-#     print('Language model imported.\n')
-
-
-# def split(X, y, target):
-
-#     labels = [label for label, _ in y]
-
-#     if np.sum(labels) < 2:
-#         print()
-#         print('One doc only author')
-#         print()
-
-#         positive_doc_idx = labels.index(1)
-#         pos_X = X[positive_doc_idx]
-#         pos_X = np.expand_dims(pos_X, axis=0)
-#         pos_y = y[positive_doc_idx]
-
-#         neg_X = np.delete(X, positive_doc_idx)
-#         neg_y = y[:positive_doc_idx] + y[positive_doc_idx+1:] #np.delete(y, positive_doc_idx)
-        
-#         X_dev_neg, X_test, y_dev_neg, y_test_ = train_test_split(
-#             neg_X, neg_y, test_size=TEST_SIZE, random_state=RANDOM_STATE
-#         )
-#         X_dev = np.concatenate((pos_X, X_dev_neg), axis=0)
-#         y_dev_ = np.concatenate(([pos_y], y_dev_neg), axis=0)
-
-#         X_dev = [str(doc) for doc in X_dev]
-#         X_test = [str(doc) for doc in X_test]
-
-#     else:
-#         print('\nAuthor with multiple documents\n')
-#         X_dev, X_test, y_dev_, y_test_ = train_test_split(
-#             X, y, test_size=TEST_SIZE, stratify=labels, random_state=RANDOM_STATE
-#         )
-    
-#     y_dev = [int(label) for label, _ in y_dev_]
-#     y_test = [int(label) for label, _ in y_test_]
-
-#     groups_dev =[title for _, title in y_dev_]
-#     groups_test =[title for _, title in y_test_]
-
-#     pos_docs_idxs = [i for i, label in enumerate(y_dev) if label == 1]
-#     pos_group_dev = [groups_dev[idx] for idx in pos_docs_idxs]
-#     pos_docs_idxs2 = [i for i, label in enumerate(y_test) if label == 1]
-#     pos_group_test = [groups_test[idx] for idx in pos_docs_idxs2]
-
-#     print('Target:', target)
-#     print('Positive training examples:')
-#     print(', '.join([group.split('-')[1][:-2] for group in pos_group_dev])[1:])
-#     print('\nPositive test examples:')
-#     print(', '.join([group.split('-')[1][:-2] for group in pos_group_test])[1:])
-#     print()
-    
-
-#     return X_dev, X_test, y_dev, y_test, groups_dev, groups_test 
 
 
 def oversample_positive_class(X_dev, X_test, y_dev, y_test, method='SMOTE'):
@@ -200,16 +139,8 @@ def LOO_split(i, X, y, doc, ylabel, filenames):
     return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name] # doc_name==groups_test
 
 
-#def data_partitioner(documents, authors, filenames, target, segment=True, oversample=True):
 def segment_data(X_dev, X_test, y_dev, y_test, groups_dev, groups_test):
     print('Data Segmentation.\n')
-
-    # X = documents
-    # y = [1 if author.rstrip() == target else 0 for author in authors]
-    # #y = [1 if author.rstrip() == target else 0 for author in authors]
-    
-    # for i, (doc, ylabel) in enumerate(zip(X,y)):
-    #     X_dev, X_test, y_dev, y_test, groups_dev, groups_test = LOO_split(i, X, y, doc, ylabel, filenames)
 
     whole_docs_len = len(y_test)
 
@@ -299,7 +230,7 @@ def get_processed_segments(processed_docs, X, groups, dataset=''):
     return processed_X
 
 
-def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, test_document=None, extract_embeddings=False):    #(documents, authors, filenames, nlp, target):
+def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, groups_dev, test_document=None, oversample=OVERSAMPLE, extract_embeddings=EXTRACT_EMBEDDINGS):    #(documents, authors, filenames, nlp, target):
 
     print('Extracting feature vectors.')
 
@@ -365,11 +296,47 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, test
         #features_test_frag = reductor.transform(processed_docs_test_frag)
         #feature_sets_test_frag.append(features_test_frag)
 
-        features_set_dev_oversampled, y_dev_oversampled, features_set_test_oversampled = reductor.oversample_DRO(Xtr=features_set_dev, ytr=y_dev, Xte=features_set_test)
-        feature_sets_dev.append(features_set_dev_oversampled)
-        feature_sets_test.append(features_set_test_oversampled)
+        if oversample:
+            features_set_dev_oversampled, y_dev_oversampled, features_set_test_oversampled, groups_dev_oversampled = reductor.oversample_DRO(Xtr=features_set_dev, ytr=y_dev, Xte=features_set_test, groups=groups_dev)
+            feature_sets_dev.append(features_set_dev_oversampled)
+            feature_sets_test.append(features_set_test_oversampled)
+            
+        else:
+            feature_sets_dev.append(features_set_dev)
+            feature_sets_test.append(features_set_test)
         #feature_sets_test_frag.append(features_test_frag)
+
+    if extract_embeddings:
+
+        document_embeddings = load_embeddings('/home/martinaleo/.ssh/Quaestio_AV/src/data/embeddings/document_embeddings_segmented_docs.pkl', reshape=True, remove_test=REMOVE_TEST, remove_egloghe=REMOVE_EGLOGHE)
+        document_embeddings_test = document_embeddings[test_document[0][:-2]]
         
+        docs_to_remove = [doc for doc in list(document_embeddings.keys()) if doc.startswith(test_document[0].split('_')[0] + '_')]
+        for doc in docs_to_remove:
+            document_embeddings.pop(doc)
+        
+        document_embeddings_dev = document_embeddings
+        document_embeddings_dev = np.array(list(document_embeddings_dev.values()), dtype=np.float64)
+        #document_embeddings_dev = list(document_embeddings_dev.values())
+
+        if oversample:
+            dro = DistributionalRandomOversampling(rebalance_ratio=0.2)
+            samples = dro._samples_to_match_ratio(np.array(y_dev))
+            original_indices = dro.get_original_indices(document_embeddings_dev, samples)
+            document_embeddings_oversampled = [document_embeddings_dev[i] for i in original_indices]
+            
+
+            feature_sets_dev.append(document_embeddings_oversampled)
+            
+        else:
+            feature_sets_dev.append(document_embeddings_dev)
+            
+        feature_sets_test.append(document_embeddings_test)
+        
+    print('\nStacking feature vectors')
+    # for f in feature_sets_dev:
+    #     print(f.dtype, type(f))
+    #feature_sets_dev = [np.asarray(f).astype(np.float64) for f in feature_sets_dev]
     X_dev_stacked = hstacker._hstack(feature_sets_dev)
     X_test_stacked = hstacker._hstack(feature_sets_test)
     #X_test_stacked_frag = hstacker._hstack(feature_sets_test_frag)
@@ -379,12 +346,20 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, test
     print('Vector document final shape:')
     print(X_dev_stacked.shape)
 
+    if oversample:
+        print(len(y_dev_oversampled), len(y_dev))
+        y_dev = y_dev_oversampled
+        groups_dev = groups_dev_oversampled
+
+    print("\nX_dev_stacked:", X_dev_stacked.shape[0])
+    print("y_dev:", len(y_dev))
+    print("groups_dev:", len(groups_dev))
+
     # if oversample:
     #     if issparse():
     #     oversample()
     
-    return X_dev_stacked, X_test_stacked, y_dev_oversampled
-
+    return X_dev_stacked, X_test_stacked, y_dev, groups_dev
 
 def store_partitioned_data(data, cache_file=PARTITIONED_DATA_CACHE_FILE):
     if os.path.exists(cache_file):
@@ -415,7 +390,7 @@ def load_partitioned_data(cache_file=PARTITIONED_DATA_CACHE_FILE):
 
 def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
 
-    groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
+    #groups_dev = [filename[:filename.find('_0')] for filename in groups_dev]
 
     if model_name in ['Linear SVC', 'Logistic Regressor', 'Probabilistic SVC']:
         param_grid = {'C': np.logspace(-4,4,9)} 
@@ -427,18 +402,21 @@ def model_trainer(X_dev_stacked, y_dev, groups_dev, model, model_name):
         param_grid = {'estimator__C': np.logspace(-4,4,9)}
 
 
+    cv = GroupKFold(n_splits=5)
+
+
     grid = GridSearchCV(model,
                         param_grid=param_grid,
-                        cv=5,
+                        cv=cv,
                         n_jobs=N_JOBS,
                         scoring='accuracy',
                         verbose=True,
                         )    
 
-    grid.fit(X_dev_stacked, y_dev)# ,groups=groups_dev)
+    grid.fit(X_dev_stacked, y_dev, groups=groups_dev)
 
-    print('Model fitted. Best params:')
-    print(grid.best_params_)
+    print('Model fitted. Best params:', grid.best_params_)
+    print('Best scores:', grid.best_score_)
     print()
 
     print('Model built. \n')
@@ -491,7 +469,7 @@ def get_scores(clf, X_test, y_test, groups_test, return_proba=True):
     return acc, f1, cf, posterior_proba
 
 
-def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_dro_total_authors.csv'):
+def save_res(target_author, accuracy, f1, posterior_proba, cf, model_name, doc_name, file_name='verifiers_res_dro_no_egloghe_grouped.csv'):
     path= '/home/martinaleo/.ssh/Quaestio_AV/src/data/LOO_res'
     print(f'Saving results in {file_name}\n')
 
@@ -537,8 +515,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
     idx_dante=[31,3,40,17,41,18,32,38,63,39,36,37,62,64]
 
     for i, (doc, ylabel) in enumerate(zip(documents,y)):
-        #if i in idx_dante:
-        if TEST_DOCUMENT in filenames[i].lower(): # target text ' quaestio'
+        if TEST_DOCUMENT in filenames[i].lower(): 
             start_time_single_iteration = time.time()
             np.random.seed(0)
 
@@ -553,7 +530,7 @@ def build_model(target, save_results=True, oversample=OVERSAMPLE):
             X_test_processed = get_processed_segments(processed_documents, X_test, groups_test, dataset='test')
             X_test_frag_processed = get_processed_segments(processed_documents, X_test_frag, groups_test_frag, dataset='test fragments')
 
-            X_dev, X_test, y_dev = extract_feature_vectors(X_dev_processed, X_test_processed, y_dev, groups_test)
+            X_dev, X_test, y_dev, groups_dev = extract_feature_vectors(X_dev_processed, X_test_processed, y_dev, groups_dev=groups_dev, test_document=groups_test)
             
             # if oversample:
             #     X_dev, X_test, y_dev, y_test = oversample_positive_class(X_dev, X_test, y_dev, y_test)
@@ -591,7 +568,3 @@ def loop_over_authors():
 #loop_over_authors()
             
 build_model(target=TARGET)
-
-
-# quaestio negativa se dvma con min df 1 e no punteggiatura (si smote)
-# 10000.0, 1000.0, {'C': 1000.0}
