@@ -68,6 +68,9 @@ latin_function_words = ['et',  'in',  'de',  'ad',  'non',  'ut', 'cum', 'per', 
                         'postea', 'nunquam']
 
 
+# da provare = ['giovanniboccaccio - epistola17','giovanniboccaccio - epistola23','giovanniboccaccio - epistola8']
+# ['misc - epistola21', 'misc - epistola31', 'misc - epistola20', 'misc - epistola4', 'misc - epistola1', 'misc - epistola25', 'misc - epistola2', 'misc - epistola24', 'misc - epistola10']
+
 def load_dataset(path ='src/data/Quaestio-corpus', debug_mode=DEBUG_MODE):
     print('Loading data.\n')
 
@@ -268,8 +271,8 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, grou
             syllabic_quant_extractor     
         ]
     
-    vectorizers_str = [str(vectorizer) for vectorizer in vectorizers] + ['Document embeddings'] 
-    vectorizers_str = list(feature_sets_dev.keys())
+    # vectorizers_str = [str(vectorizer) for vectorizer in vectorizers] + ['Document embeddings'] 
+    # vectorizers_str = list(feature_sets_dev.keys())
 
     feature_sets_dev = dict()
     feature_sets_test = dict()
@@ -340,6 +343,8 @@ def extract_feature_vectors(processed_docs_dev, processed_docs_test, y_dev, grou
     if oversample:
         y_dev = y_dev_oversampled
         groups_dev = groups_dev_oversampled
+
+    vectorizers_str = list(feature_sets_dev.keys())
 
     return feature_sets_dev, feature_sets_test, y_dev, groups_dev, vectorizers_str
 
