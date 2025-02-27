@@ -535,7 +535,7 @@ class AuthorshipVerification:
                 self.save_results(
                     target, acc, f1, posterior_proba, cf, model_name,
                     groups_test[0][:-2], feature_idxs.keys(),
-                    file_name=, path_name) 
+                    file_name, path_name) 
 
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(f'Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes.')
