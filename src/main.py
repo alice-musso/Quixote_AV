@@ -397,7 +397,7 @@ class AuthorshipVerification:
     def save_results(self, target_author: str, accuracy: float, f1: float, 
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
                     doc_name: str, features: List[str], 
-                    file_name: str = 'AV_res_boccaccio.csv'):
+                    file_name: str = 'clf_res.csv'):
         """Save model evaluation results"""
         path = Path('/home/martinaleo/.ssh/Quaestio_AV/src/data/AV_res_noTolomeo')
         print(f'Saving results in {file_name}\n')
