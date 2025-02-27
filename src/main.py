@@ -122,7 +122,6 @@ class AuthorshipVerification:
                     y_test: List[int], groups_dev: List[str], groups_test: List[str]
                     ) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str], List[str]]:
         """Segment the documents into smaller chunks"""
-        from segmentation import Segmentation
         
         print('Segmenting data...')
         whole_docs_len = len(y_test)
