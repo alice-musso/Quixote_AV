@@ -53,6 +53,8 @@ class ModelConfig:
     rebalance_ratio: float = 0.2
     save_res: bool = True
     test_genre: bool = False
+    results_filename: str = 'results.csv'
+    results_path: str = './results'   
 
     @classmethod
     def from_args(cls):
@@ -62,12 +64,22 @@ class ModelConfig:
                         help='Test document (empty=full LOO, author=author LOO, doc=specific doc)')
         parser.add_argument('--target', default='Dante',
                         help='Target author')
+        parser.add_argument('--results-filename', default='results.csv',
+                    help='Filename for saving results')
+        parser.add_argument('--results-path', 
+                    default='./results',
+                    help='Directory path for saving results')
         args = parser.parse_args()
 
         if '--target' in sys.argv and '--test-document' not in sys.argv:
             args.test_document = ''
             
-        return cls(), args.target, args.test_document
+        config = cls()
+        config.results_filename = args.results_filename
+        config.results_path = args.results_path
+        
+        return config, args.target, args.test_document
+            
 
 class AuthorshipVerification:
     """Main class for authorship verification system"""
@@ -79,7 +91,7 @@ class AuthorshipVerification:
         self.posterior_proba = 0
         
     def load_dataset(self, test_document: str, path: str = 'src/data/Quaestio-corpus') -> Tuple[List[str], List[str], List[str]]:
-        """Load and prepare the dataset"""
+        
         print('Loading data...')
         documents, authors, filenames = load_corpus(
             path=path, 
@@ -94,7 +106,7 @@ class AuthorshipVerification:
 
     def loo_split(self, i: int, X: List[str], y: List[int], doc: str, ylabel: int, 
                  filenames: List[str]) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
-        """Perform Leave-One-Out split of the data"""
+        
         doc_name = filenames[i]
         print(f'Test document: {doc_name[:-2]}')
         
@@ -211,7 +223,7 @@ class AuthorshipVerification:
                               processed_docs_test: List[spacy.tokens.Doc],
                               y_dev: List[int], y_test: List[int], 
                               groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
-        """Extract feature vectors from processed documents"""
+        
         print('Extracting feature vectors...')
 
         latin_function_words = get_latin_function_words()
@@ -332,7 +344,7 @@ class AuthorshipVerification:
     def train_model(self, X_dev: np.ndarray, y_dev: List[int], 
                     groups_dev: List[str], model: BaseEstimator, 
                     model_name: str) -> BaseEstimator:
-            """Train the model using cross-validation"""
+            
             param_grid = {
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': ['balanced', None]
@@ -363,7 +375,7 @@ class AuthorshipVerification:
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
                     ) -> Tuple[float, float, np.ndarray, float]:
-        """Evaluate the model's performance"""
+        
         print('Evaluating performance...',
             '(on fragmented text)' if len(y_test) > 110 else '\n')
         
@@ -398,7 +410,7 @@ class AuthorshipVerification:
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
                     doc_name: str, features: List[str], 
                     file_name: str, path_name: str):
-        """Save model evaluation results"""
+        
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
         
@@ -455,8 +467,10 @@ class AuthorshipVerification:
 
         for i in test_indices:
             self._process_single_document(
-                i, documents, y, processed_documents, filenames, target, save_results
-            )
+                i, documents, y, processed_documents, filenames, target, 
+                save_results, self.config.results_filename, 
+                self.config.results_path  
+                )
 
         total_time = round((time.time() - start_time) / 60, 2)
         print(f'Total time spent for model building for author {target}: {total_time} minutes.')
@@ -464,7 +478,9 @@ class AuthorshipVerification:
 
     def _process_single_document(self, i: int, documents: List[str], y: List[int], 
                               processed_documents: Dict[str, spacy.tokens.Doc],
-                              filenames: List[str], target: str, save_results: bool):
+                              filenames: List[str], target: str, save_results: bool,
+                              file_name: str, path_name: str):
+                                  
         """Process a single document for authorship verification"""
         start_time_single_iteration = time.time()
         np.random.seed(self.config.random_state)
@@ -518,14 +534,14 @@ class AuthorshipVerification:
             if save_results:
                 self.save_results(
                     target, acc, f1, posterior_proba, cf, model_name,
-                    groups_test[0][:-2], feature_idxs.keys()
-                )
+                    groups_test[0][:-2], feature_idxs.keys(),
+                    file_name=, path_name) 
 
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(f'Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes.')
 
 def main():
-    """Main entry point for the authorship verification system"""
+    
     config, target, test_document = ModelConfig.from_args()
     nlp = spacy.load('la_core_web_lg')
     av_system = AuthorshipVerification(config, nlp)
