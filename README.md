@@ -1,4 +1,28 @@
 # Authorship Verification for Medieval Latin 
+This repository contains a system for authorship verification of medieval Latin texts, implementing feature extraction, distributional random oversampling, and classification algorithms to determine text authorship.
+
+## Project Structure
+
+The project is organized into the following modules:
+
+- **data_preparation**: Contains tools for corpus loading and text segmentation
+- **feature_extraction**: Implements various feature extraction methods for text analysis
+- **oversampling**: Contains the Distributional Random Oversampling (DRO) algorithm and supporting functions
+- **main.py**: Main execution script for the authorship verification system
+
+## Requirements
+
+This project requires Python 3.6+ and the following packages:
+
+```
+numpy
+scikit-learn
+scipy
+spacy
+nltk
+cltk
+tqdm
+```
 
 ## Usage
 
