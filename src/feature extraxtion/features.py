@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 
-from dro import DistributionalRandomOversampling
+from oversampling.dro import DistributionalRandomOversampling
 import string
 from scipy.sparse import hstack, csr_matrix, issparse
 from sklearn.feature_selection import SelectKBest, chi2
