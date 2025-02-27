@@ -24,9 +24,9 @@ from tqdm import tqdm
 import nltk
 from nltk import sent_tokenize
 
-from data_loader import load_corpus, get_latin_function_words
-from segmentation import Segmentation
-from features import (
+from data_preparation.data_loader import load_corpus, get_latin_function_words
+from data_preparation.segmentation import Segmentation
+from feature_extraction.features import (
     DocumentProcessor,
     FeaturesFunctionWords,
     FeaturesDistortedView,
