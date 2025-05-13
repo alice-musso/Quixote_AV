@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.preprocessing import normalize
 from scipy.sparse import csc_matrix, csr_matrix, vstack, hstack
-from tsr_function import ContTable, information_gain
+from .tsr_function import ContTable, information_gain
 from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfTransformer
 

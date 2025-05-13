@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-
+from types import SimpleNamespace
 from oversampling.dro import DistributionalRandomOversampling
 import string
 from scipy.sparse import hstack, csr_matrix, issparse
@@ -11,8 +11,10 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 from nltk import ngrams
-from cltk.prosody.lat.macronizer import Macronizer
-from cltk.prosody.lat.scanner import Scansion
+# uncomment these packages for testing the Syllabic Quantities extractor
+# from cltk.prosody.lat.macronizer import Macronizer
+# from cltk.prosody.lat.scanner import Scansion
+from spacy.tokens import DocBin
 
 from string import punctuation
 
@@ -31,32 +33,37 @@ class DocumentProcessor:
             self.cache = pickle.load(open(self.savecache, 'rb'))
 
     def save_cache(self):
-        if self.savecache is not None:
-            print(f'Storing cache in {self.savecache}')
-            parent = Path(self.savecache).parent
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        return
+        # the following code is not working with current pickle, nor dill implementations, due to some problem with
+        # the serialization of the spaCy datastructures...
 
-    def delete_doc(self, filename):
-        removed_doc = self.cache.pop(filename, None)
-        if removed_doc is not None:
-            print(f'Removed {filename} from cache')
-            self.save_cache()  # Salva la cache aggiornata dopo l'eliminazione
-        
-        else:
-            print(f'{filename} not found in cache')
-            
+        # if self.savecache is not None:
+        #     print(f'Storing cache in {self.savecache}')
+        #     parent = Path(self.savecache).parent
+        #     if parent:
+        #         os.makedirs(parent, exist_ok=True)
+        #     pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
+    def _as_namespace(self, spacy_doc):
+        doc = SimpleNamespace(
+            text=spacy_doc.text,
+            sents=[
+                [SimpleNamespace(pos_=token.pos_) for token in sent] for sent in spacy_doc.sents
+            ],
+            words=[str(token) for token in spacy_doc]
+        )
+        return doc
             
     def process_documents(self, documents, filenames):
         processed_docs = {}
-        for filename, doc in zip(filenames, documents):
+        for filename, doc in tqdm(zip(filenames, documents), total=len(filenames), desc='processing with spacy'):
             if filename in self.cache:
                 #print('document already in cache')
                 processed_docs[filename[:-2]] = self.cache[filename]
             else:
                 print(f'{filename} not in cache')
                 processed_doc = self.nlp(doc)
+                # processed_doc = self._as_namespace(processed_doc)
                 self.cache[filename] = processed_doc
                 processed_docs[filename[:-2]] = self.cache[filename]
                 self.save_cache()
@@ -187,109 +194,109 @@ class FeaturesDistortedView:
         return dis_texts
     
         
-
-class FeaturesSyllabicQuantities:
-
-    def __init__(self, min_range=1,max_range=1, ngram_range=(1,1), **tfidf_kwargs):
-        self.tfidf_kwargs = tfidf_kwargs
-        self.min_range = min_range
-        self.max_range = max_range
-        self.ngram_range = ngram_range
-        self.vectorizer = TfidfVectorizer(ngram_range=self.ngram_range, **self.tfidf_kwargs)
-        self.counter = CountVectorizer()
-        
-
-    def __str__(self) -> str:
-        ngram_range_str = f' [n-gram range: {self.ngram_range}]'
-        return 'FeaturesSyllabicQuantities' + ngram_range_str
-
-
-    def fit(self, documents, y=None):
-        raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(documents)
-        #self.count_syllabic_quantities(scanned_texts)
-        #self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
-        self.vectorizer.fit(scanned_texts)
-        return self
-
-
-    def transform(self, documents, y=None):
-        raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(documents)
-        self.count_syllabic_quantities(scanned_texts)
-        features = self.vectorizer.transform(scanned_texts)
-        return features
-    
-
-    def fit_transform(self, documents, y=None):
-        raw_documents = [doc.text for doc in documents]
-        scanned_texts = self.metric_scansion(documents)
-        self.count_syllabic_quantities(scanned_texts)
-        # self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
-        features = self.vectorizer.fit_transform(scanned_texts)
-        return features
-    
-
-    def metric_scansion(self, documents, filenames=None):
-        #documents = [self.remove_invalid_word(doc, filename) for doc, filename in zip(documents, filenames)]
-        documents = [self.remove_invalid_word(doc) for doc in documents]
-            
-        macronizer = Macronizer('tag_ngram_123_backoff')
-        scanner = Scansion(
-            clausula_length=100000, punctuation=string.punctuation)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
-        macronized_texts = [macronizer.macronize_text(doc) for doc in tqdm(documents, 'macronizing', total=len(documents))]
-        scanned_texts = [scanner.scan_text(doc) for doc in
-                        tqdm(macronized_texts, 'metric scansion', total=len(macronized_texts))]
-        scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
-        return scanned_texts
-    
-    def remove_invalid_word(self, document, filename=None):
-        # todo: salvare i numeri romani, i numeri
-        legal_words=[]
-        vowels = set('aeiouāēīōū')
-        tokens = [token.text for token in document]
-        illegal_tokens=[]
-
-        for token in tokens:
-            token = token.lstrip()
-            if len(token) == 1:
-                if token.lower() in vowels or token in punctuation:
-                    legal_words.append(token)
-            elif len(token) == 2:
-                if not all(char in punctuation for char in token) and not all(char not in vowels for char in token): 
-                    legal_words.append(token)
-            else:
-                if (
-                    any(char in vowels for char in token)
-                    and not any(
-                        token[i] in punctuation and token[i + 1] in punctuation
-                        for i in range(len(token) - 1)
-                    )
-                ):
-                    legal_words.append(token)
-
-            if token not in legal_words:
-                illegal_tokens.append(token)
-        
-        if filename:
-
-            with open("illegal_words.txt", "a") as file:
-                file.write(f"{filename}\n")
-                file.write(f"{str(document)[:50]}\n")
-                file.write(f"{illegal_tokens}\n")
-                file.write("\n")
-                
-
-        return ' '.join(legal_words)
-
-
-    def count_syllabic_quantities(self, texts):
-        if not hasattr(self, 'n_training_terms'):
-            self.training_words = self.counter.fit_transform(texts) 
-            self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
-        else:
-            self.test_words = self.counter.transform(texts)
-            self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
+# uncomment this code if you want to test the Syllabic Quantities
+# class FeaturesSyllabicQuantities:
+#
+#     def __init__(self, min_range=1,max_range=1, ngram_range=(1,1), **tfidf_kwargs):
+#         self.tfidf_kwargs = tfidf_kwargs
+#         self.min_range = min_range
+#         self.max_range = max_range
+#         self.ngram_range = ngram_range
+#         self.vectorizer = TfidfVectorizer(ngram_range=self.ngram_range, **self.tfidf_kwargs)
+#         self.counter = CountVectorizer()
+#
+#
+#     def __str__(self) -> str:
+#         ngram_range_str = f' [n-gram range: {self.ngram_range}]'
+#         return 'FeaturesSyllabicQuantities' + ngram_range_str
+#
+#
+#     def fit(self, documents, y=None):
+#         raw_documents = [doc.text for doc in documents]
+#         scanned_texts = self.metric_scansion(documents)
+#         #self.count_syllabic_quantities(scanned_texts)
+#         #self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+#         self.vectorizer.fit(scanned_texts)
+#         return self
+#
+#
+#     def transform(self, documents, y=None):
+#         raw_documents = [doc.text for doc in documents]
+#         scanned_texts = self.metric_scansion(documents)
+#         self.count_syllabic_quantities(scanned_texts)
+#         features = self.vectorizer.transform(scanned_texts)
+#         return features
+#
+#
+#     def fit_transform(self, documents, y=None):
+#         raw_documents = [doc.text for doc in documents]
+#         scanned_texts = self.metric_scansion(documents)
+#         self.count_syllabic_quantities(scanned_texts)
+#         # self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
+#         features = self.vectorizer.fit_transform(scanned_texts)
+#         return features
+#
+#
+#     def metric_scansion(self, documents, filenames=None):
+#         #documents = [self.remove_invalid_word(doc, filename) for doc, filename in zip(documents, filenames)]
+#         documents = [self.remove_invalid_word(doc) for doc in documents]
+#
+#         macronizer = Macronizer('tag_ngram_123_backoff')
+#         scanner = Scansion(
+#             clausula_length=100000, punctuation=string.punctuation)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
+#         macronized_texts = [macronizer.macronize_text(doc) for doc in tqdm(documents, 'macronizing', total=len(documents))]
+#         scanned_texts = [scanner.scan_text(doc) for doc in
+#                         tqdm(macronized_texts, 'metric scansion', total=len(macronized_texts))]
+#         scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
+#         return scanned_texts
+#
+#     def remove_invalid_word(self, document, filename=None):
+#         # todo: salvare i numeri romani, i numeri
+#         legal_words=[]
+#         vowels = set('aeiouāēīōū')
+#         tokens = [token.text for token in document]
+#         illegal_tokens=[]
+#
+#         for token in tokens:
+#             token = token.lstrip()
+#             if len(token) == 1:
+#                 if token.lower() in vowels or token in punctuation:
+#                     legal_words.append(token)
+#             elif len(token) == 2:
+#                 if not all(char in punctuation for char in token) and not all(char not in vowels for char in token):
+#                     legal_words.append(token)
+#             else:
+#                 if (
+#                     any(char in vowels for char in token)
+#                     and not any(
+#                         token[i] in punctuation and token[i + 1] in punctuation
+#                         for i in range(len(token) - 1)
+#                     )
+#                 ):
+#                     legal_words.append(token)
+#
+#             if token not in legal_words:
+#                 illegal_tokens.append(token)
+#
+#         if filename:
+#
+#             with open("illegal_words.txt", "a") as file:
+#                 file.write(f"{filename}\n")
+#                 file.write(f"{str(document)[:50]}\n")
+#                 file.write(f"{illegal_tokens}\n")
+#                 file.write("\n")
+#
+#
+#         return ' '.join(legal_words)
+#
+#
+#     def count_syllabic_quantities(self, texts):
+#         if not hasattr(self, 'n_training_terms'):
+#             self.training_words = self.counter.fit_transform(texts)
+#             self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
+#         else:
+#             self.test_words = self.counter.transform(texts)
+#             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
 
 class DummyTfidf:

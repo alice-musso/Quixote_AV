@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import sys
 import argparse
 from dataclasses import dataclass
@@ -39,7 +37,7 @@ from feature_extraction.features import (
     HstackFeatureSet,
     FeaturesCharNGram,
     FeaturesVerbalEndings,
-    FeaturesSyllabicQuantities
+    # FeaturesSyllabicQuantities
 )
 
 @dataclass
@@ -99,7 +97,7 @@ class AuthorshipVerification:
             remove_test=False if test_document == 'Dante - Quaestio' else True,
             remove_egloghe=False,
             remove_anonymus_files=True,
-            remove_monarchia=False
+            remove_monarchia=False,
         )
         print('Data loaded.')
         return documents, authors, filenames
@@ -182,9 +180,15 @@ class AuthorshipVerification:
 
     def find_segment(self, segment: str, processed_document: spacy.tokens.Doc) -> spacy.tokens.Span:
         """Find a segment within a processed document"""
-        start_segment = sent_tokenize(segment)[0]
+        segment = sent_tokenize(segment)[0]
+        start_segment = segment # segment.replace('\n',' ').replace('  ', ' ').replace('\t', ' ')
         start_idx = processed_document.text.find(start_segment)
         end_idx = start_idx + len(segment)
+
+        if start_idx == -1:
+            print('mismatch found:::')
+            print('SEGMENT:', start_segment)
+            print('PROCESSED:', processed_document.text)
         
         processed_seg = processed_document.char_span(start_idx, end_idx, alignment_mode='expand')
         if not processed_seg:
@@ -433,20 +437,23 @@ class AuthorshipVerification:
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
     def run(self, target: str, test_document: str, save_results: bool = True, 
-            filter_dataset: bool = False, test_genre: bool = False):
+            filter_dataset: bool = False, test_genre: bool = False, corpus_path='../Quaestio-corpus'):
         """Run the complete authorship verification process"""
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')
         print(f'Building LOO model for author {target}.\n')
 
-        documents, authors, filenames = self.load_dataset(test_document)
+        documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
         filenames = [f'{filename}_0' for filename in filenames]
-        genres = ['Trattato' if 'epistola' in filename.lower() 
+        genres = ['Trattato' if 'epistola' not in filename.lower()
                 else 'Epistola' for filename in filenames]
         
         print(f'Genres: {np.unique(genres, return_counts=True)}')
 
         processed_documents = self.get_processed_documents(documents, filenames)
+
+        # replace the plain text documents with clean processed strings after spaCy
+        documents = [processed_documents[filename[:-2]].text for filename in filenames]
 
         if test_genre:
             y = [1 if genre.rstrip() == 'Trattato' else 0 for genre in genres]
@@ -543,6 +550,7 @@ def main():
     
     config, target, test_document = ModelConfig.from_args()
     nlp = spacy.load('la_core_web_lg')
+
     av_system = AuthorshipVerification(config, nlp)
     av_system.run(
         target=target,

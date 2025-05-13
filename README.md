@@ -12,13 +12,30 @@ The project is organized into the following modules:
 
 ## Requirements
 
-This project requires Python 3.6+ and the following packages:
+The project comes with a _requirements.txt_ file. 
+
+In case you want to create your own environment, follow these steps: Create a conda environment and install spaCy's _la_core_web_lg_ core. This core requires older versions of numpy,
+that should be installed before installing other packages such as scipy:
+
+```bash
+conda create -n questio python=3.10 -y
+conda activate questio
+pip install "numpy>=1.22.4,<1.29.0"
+pip install scipy gensim cltk spacy
+pip install "la-core-web-lg @ https://huggingface.co/latincy/la_core_web_lg/resolve/main/la_core_web_lg-any-py3-none-any.whl"
+```
+
+You should also download some _nltk_ models:
+
+```python
+import nltk
+nltk.download('punkt_tab')
+```
+
+This project also requires common packages:
 
 ```
-numpy
 scikit-learn
-scipy
-spacy
 nltk
 cltk
 tqdm
