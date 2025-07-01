@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from types import SimpleNamespace
-from oversampling.dro import DistributionalRandomOversampling
+# from oversampling.dro import DistributionalRandomOversampling
 import string
 from scipy.sparse import hstack, csr_matrix, issparse
 from sklearn.feature_selection import SelectKBest, chi2
@@ -17,6 +17,12 @@ from nltk import ngrams
 from spacy.tokens import DocBin
 
 from string import punctuation
+
+from oversampling.dro import DistributionalRandomOversampling
+
+
+# from dro import DistributionalRandomOversampling
+
 
 class DocumentProcessor:
     def __init__(self, language_model=None, savecache='.cache/processed_docs_def.pkl'):
@@ -33,16 +39,16 @@ class DocumentProcessor:
             self.cache = pickle.load(open(self.savecache, 'rb'))
 
     def save_cache(self):
-        return
+        # return
         # the following code is not working with current pickle, nor dill implementations, due to some problem with
         # the serialization of the spaCy datastructures...
 
-        # if self.savecache is not None:
-        #     print(f'Storing cache in {self.savecache}')
-        #     parent = Path(self.savecache).parent
-        #     if parent:
-        #         os.makedirs(parent, exist_ok=True)
-        #     pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        if self.savecache is not None:
+            print(f'Storing cache in {self.savecache}')
+            parent = Path(self.savecache).parent
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     def _as_namespace(self, spacy_doc):
         doc = SimpleNamespace(
@@ -58,7 +64,7 @@ class DocumentProcessor:
         processed_docs = {}
         for filename, doc in tqdm(zip(filenames, documents), total=len(filenames), desc='processing with spacy'):
             if filename in self.cache:
-                #print('document already in cache')
+                print('document already in cache')
                 processed_docs[filename[:-2]] = self.cache[filename]
             else:
                 print(f'{filename} not in cache')
