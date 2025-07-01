@@ -549,7 +549,7 @@ class AuthorshipVerification:
 def main():
     
     config, target, test_document = ModelConfig.from_args()
-    nlp = spacy.load('la_core_web_lg')
+    nlp = spacy.load('es_dep_news_trf')
 
     av_system = AuthorshipVerification(config, nlp)
     av_system.run(
