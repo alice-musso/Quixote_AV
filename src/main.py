@@ -238,7 +238,9 @@ class AuthorshipVerification:
             FeaturesPOST(n=(1,3)),
             FeaturesMendenhall(upto=20),
             FeaturesSentenceLength(),
-            FeaturesCharNGram(n=(1,3))
+            FeaturesCharNGram(n=(2,3)),
+            FeaturesDistortedView(method = 'DVEX'),
+            FeaturesPunctuation()
         ]
 
         hstacker = HstackFeatureSet(vectorizers)

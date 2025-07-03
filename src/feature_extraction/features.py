@@ -17,6 +17,7 @@ from nltk import ngrams
 from spacy.tokens import DocBin
 
 from string import punctuation
+sp_punctuation = punctuation + '¡¿'
 
 from oversampling.dro import DistributionalRandomOversampling
 
@@ -521,7 +522,7 @@ class FeaturesPunctuation:
     def __init__(self, sublinear_tf=False, norm='l1', ngram_range=(1,3)):
         self.sublinear_tf = sublinear_tf
         self.norm = norm
-        self.punctuation=punctuation
+        self.punctuation=sp_punctuation
         self.ngram_range = ngram_range
         self.counter = CountVectorizer(vocabulary=self.punctuation, min_df=1)
         self.vectorizer = TfidfVectorizer(analyzer='char', vocabulary=self.punctuation, use_idf=False, norm=self.norm, min_df=3, ngram_range=self.ngram_range)
