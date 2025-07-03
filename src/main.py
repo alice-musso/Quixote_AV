@@ -22,7 +22,7 @@ from tqdm import tqdm
 import nltk
 from nltk import sent_tokenize
 
-from data_preparation.data_loader import load_corpus, get_latin_function_words
+from data_preparation.data_loader import load_corpus, get_spanish_function_words
 from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
     DocumentProcessor,
@@ -88,7 +88,7 @@ class AuthorshipVerification:
         self.accuracy = 0
         self.posterior_proba = 0
         
-    def load_dataset(self, test_document: str, path: str = 'src/data/Quaestio-corpus') -> Tuple[List[str], List[str], List[str]]:
+    def load_dataset(self, test_document: str, path: str = 'src/data/corpus') -> Tuple[List[str], List[str], List[str]]:
         
         print('Loading data...')
         documents, authors, filenames = load_corpus(
@@ -229,10 +229,10 @@ class AuthorshipVerification:
         
         print('Extracting feature vectors...')
 
-        latin_function_words = get_latin_function_words()
+        spanish_function_words = get_spanish_function_words()
         vectorizers = [
             FeaturesFunctionWords(
-                function_words=latin_function_words, 
+                function_words=spanish_function_words,
                 ngram_range=(1,1)
             ),
             FeaturesPOST(n=(1,3)),
@@ -437,7 +437,7 @@ class AuthorshipVerification:
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
     def run(self, target: str, test_document: str, save_results: bool = True, 
-            filter_dataset: bool = False, test_genre: bool = False, corpus_path='../Quaestio-corpus'):
+            filter_dataset: bool = False, test_genre: bool = False, corpus_path='../corpus'):
         """Run the complete authorship verification process"""
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')

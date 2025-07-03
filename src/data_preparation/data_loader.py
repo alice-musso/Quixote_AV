@@ -13,46 +13,13 @@ from collections import Counter
 # ------------------------------------------------------------------------
 # document loading routine
 # ------------------------------------------------------------------------
+import nltk
+from nltk.corpus import stopwords
+nltk.download('stopwords')
 
-def get_latin_function_words():
-    return ['et',  'in',  'de',  'ad',  'non',  'ut', 'cum', 'per', 'a', 'sed', 'que', 'quia', 'ex', 'sic',
-                        'si', 'etiam', 'idest', 'nam', 'unde', 'ab', 'uel', 'sicut', 'ita', 'enim', 'scilicet', 'nec',
-                        'pro', 'autem', 'ibi',  'dum', 'uero', 'tamen', 'inter', 'ideo', 'propter', 'contra', 'sub',
-                        'quomodo', 'ubi', 'super', 'iam', 'tam', 'hec', 'post', 'quasi', 'ergo', 'inde', 'e', 'tunc',
-                        'atque', 'ac', 'sine', 'nisi', 'nunc', 'quando', 'ne', 'usque', 'siue', 'aut', 'igitur', 'circa',
-                        'quidem', 'supra', 'ante', 'adhuc', 'seu' , 'apud', 'olim', 'statim', 'satis', 'ob', 'quoniam',
-                        'postea', 'nunquam']
-    
-def get_latin_verbal_endings():
-    return ['o', 'eo', 'io', 'as', 'es', 'is', 'at', 'et', 'amus', 'emus', 'atis',
-                'etis', 'itis', 'ant', 'ent', 'unt', 'iunt', 'or', 'eor', 'ior', 'aris', 'eris', 'iris',
-                'atur', 'etur', 'itur', 'amur', 'emur', 'imur', 'amini', 'emini', 'imini',
-                'antur', 'entur', 'untur', 'iuntur', 'abam', 'ebam', 'iebam', 'abas',
-                'ebas', 'iebas', 'abat', 'ebat', 'iebat', 'abamus', 'ebamus', 'iebamus',
-                'abatis', 'ebatis', 'iebatis', 'abant', 'ebant', 'iebant', 'abar', 'ebar',
-                'iebar', 'abaris', 'ebaris', 'iebaris', 'abatur', 'ebatur', 'iebatur',
-                'abamur', 'ebamur', 'iebamur', 'abamini', 'ebamini', 'iebamini',
-                'abantur', 'ebantur', 'iebantur', 'abo', 'ebo', 'am', 'iam', 'abis', 'ebis',
-                'ies', 'abit', 'ebit', 'iet', 'abimus', 'ebimus', 'iemus', 'abitis',
-                'ebitis', 'ietis', 'abunt', 'ebunt', 'ient', 'abor', 'ebor', 'ar', 'iar',
-                'aberis', 'eberis', 'ieris', 'abitur', 'ebitur', 'ietur', 'abimur', 'ebimur',
-                'iemur', 'abimini', 'ebimini', 'iemini', 'abuntur', 'ebuntur', 'ientur',
-                'i', 'isti', 'it', 'imus', 'istis', 'erunt', 'em', 'eam', 'eas', 'ias', 'eat', 'iat',
-                'eamus', 'iamus', 'eatis', 'iatis', 'eant', 'iant', 'er', 'ear', 'earis', 'iaris',
-                'eatur', 'iatur', 'eamur', 'iamur', 'eamini', 'iamini', 'eantur', 'iantur',
-                'rem', 'res', 'ret', 'remus', 'retis', 'rent', 'rer', 'reris', 'retur', 'remur',
-                'remini', 'rentur', 'erim', 'issem', 'isses', 'isset', 'issemus', 'issetis',
-                'issent', 'a', 'ate', 'e', 'ete', 'ite', 'are', 'ere', 'ire', 'ato', 'eto', 'ito',
-                'atote', 'etote', 'itote', 'anto', 'ento', 'unto', 'iunto', 'ator', 'etor',
-                'itor', 'aminor', 'eminor', 'iminor', 'antor', 'entor', 'untor', 'iuntor',
-                'ari', 'eri', 'iri', 'andi', 'ando', 'andum', 'andus', 'ande', 'ans', 'antis',
-                'anti', 'antem', 'antes', 'antium', 'antibus', 'antia', 'esse', 'sum',
-                'est', 'sumus', 'estis', 'sunt', 'eram', 'eras', 'erat', 'eramus', 'eratis',
-                'erant', 'ero', 'erit', 'erimus', 'eritis', 'erint', 'sim', 'sis', 'sit',
-                'simus', 'sitis', 'sint', 'essem', 'esses', 'esset', 'essemus', 'essetis',
-                'essent', 'fui', 'fuisti', 'fuit', 'fuimus', 'fuistis', 'fuerunt', 'este', 'esto',
-                'estote', 'sunto']
-
+def get_spanish_function_words():
+    stop_words_sp = set(stopwords.words('spanish'))
+    return stop_words_sp
 
 # data_loader.py
 
