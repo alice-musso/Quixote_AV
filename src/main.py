@@ -44,7 +44,7 @@ from feature_extraction.features import (
 class ModelConfig:
     """Configuration for the model training and evaluation"""
     n_jobs: int = 32
-    segment_min_token_size: int = 400
+    segment_min_token_size: int = 500
     random_state: int = 0
     k_ratio: float = 1.0
     oversample: bool = False
