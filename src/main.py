@@ -242,7 +242,7 @@ class AuthorshipVerification:
             FeaturesMendenhall(upto=20),
             FeaturesSentenceLength(),
             FeaturesCharNGram(n=(2,3)),
-            FeaturesDistortedView(method = 'DVEX'),
+            FeaturesDistortedView(method = 'DVEX', function_words= spanish_function_words),
             FeaturesPunctuation()
         ]
 
