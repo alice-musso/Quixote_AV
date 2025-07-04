@@ -20,8 +20,8 @@ import csv
 import time
 from tqdm import tqdm
 import nltk
+nltk.download('punkt_tab')
 from nltk import sent_tokenize
-
 from data_preparation.data_loader import load_corpus, get_spanish_function_words
 from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
@@ -47,7 +47,7 @@ class ModelConfig:
     segment_min_token_size: int = 400
     random_state: int = 0
     k_ratio: float = 1.0
-    oversample: bool = True
+    oversample: bool = False
     rebalance_ratio: float = 0.2
     save_res: bool = True
     test_genre: bool = False
@@ -58,10 +58,12 @@ class ModelConfig:
     def from_args(cls):
         """Create config from command line args"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--test-document', default='Dante - Quaestio',
+        parser.add_argument('--test-document', default='Avellaneda - Quijote apocrifo',
                         help='Test document (empty=full LOO, author=author LOO, doc=specific doc)')
-        parser.add_argument('--target', default='Dante',
+        parser.add_argument('--target', default='Avellaneda',
                         help='Target author')
+        parser.add_argument('--save-res', action='store_true',
+                        help='Save results to file')
         parser.add_argument('--results-filename', default='results.csv',
                     help='Filename for saving results')
         parser.add_argument('--results-path', 
@@ -75,6 +77,7 @@ class ModelConfig:
         config = cls()
         config.results_filename = args.results_filename
         config.results_path = args.results_path
+        config.save_res = args.save_res
         
         return config, args.target, args.test_document
             
@@ -94,7 +97,7 @@ class AuthorshipVerification:
         documents, authors, filenames = load_corpus(
             path=path, 
             remove_epistles=False,
-            remove_test=False if test_document == 'Dante - Quaestio' else True,
+            remove_test=False if test_document == 'Avellaneda - Quijote apocrifo' else True,
             remove_egloghe=False,
             remove_anonymus_files=True,
             remove_monarchia=False,
