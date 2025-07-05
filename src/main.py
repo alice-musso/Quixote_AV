@@ -51,6 +51,7 @@ class ModelConfig:
     rebalance_ratio: float = 0.2
     save_res: bool = True
     test_genre: bool = False
+    multiclass: bool = False
     results_filename: str = 'results.csv'
     results_path: str = './results'   
 
@@ -60,8 +61,10 @@ class ModelConfig:
         parser = argparse.ArgumentParser()
         parser.add_argument('--test-document', default='Avellaneda - Quijote apocrifo',
                         help='Test document (empty=full LOO, author=author LOO, doc=specific doc)')
-        parser.add_argument('--target', default='Avellaneda',
+        parser.add_argument('--target', default='Cervantes',
                         help='Target author')
+        parser.add_argument('--multiclass', action='store_true',
+                            help='Use multiclass classification instead of binary')
         parser.add_argument('--save-res', action='store_true',
                         help='Save results to file')
         parser.add_argument('--results-filename', default='results.csv',
@@ -78,6 +81,7 @@ class ModelConfig:
         config.results_filename = args.results_filename
         config.results_path = args.results_path
         config.save_res = args.save_res
+        config.multiclass = args.multiclass
         
         return config, args.target, args.test_document
             
@@ -90,6 +94,8 @@ class AuthorshipVerification:
         self.nlp = nlp
         self.accuracy = 0
         self.posterior_proba = 0
+        self.author_to_id = {}
+        self.id_to_author = {}
         
     def load_dataset(self, test_document: str, path: str = 'src/data/corpus') -> Tuple[List[str], List[str], List[str]]:
         
@@ -104,6 +110,25 @@ class AuthorshipVerification:
         )
         print('Data loaded.')
         return documents, authors, filenames
+
+    def create_labels(self, authors: List[str], target: str, test_genre: bool = False,
+                      genres: List[str] = None) -> List[int]:
+
+        if test_genre:
+            return [1 if genre.rstrip() == 'Trattato' else 0 for genre in genres]
+
+        if self.config.multiclass:
+            unique_authors = list(set(author.rstrip() for author in authors))
+            self.author_to_id = {author: i for i, author in enumerate(unique_authors)}
+            self.id_to_author = {i: author for author, i in self.author_to_id.items()}
+
+            print(f"Multiclass mode: {len(unique_authors)} authors")
+            print(f"Author mapping: {self.author_to_id}")
+
+            return [self.author_to_id[author.rstrip()] for author in authors]
+
+        else:
+            return [1 if author.rstrip() == target else 0 for author in authors]
 
     def loo_split(self, i: int, X: List[str], y: List[int], doc: str, ylabel: int, 
                  filenames: List[str]) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
@@ -363,14 +388,18 @@ class AuthorshipVerification:
                 shuffle=True,
                 random_state=self.config.random_state
             )
-            f1 = make_scorer(f1_score, zero_division=0)
+
+            if self.config.multiclass:
+                scoring_method = make_scorer(f1_score, average='macro', zero_division=0)
+            else:
+                scoring_method = make_scorer(f1_score, zero_division=0)
             
             grid_search = GridSearchCV(
                 model,
                 param_grid=param_grid,
                 cv=cv,
                 n_jobs=self.config.n_jobs,
-                scoring=f1,
+                scoring= scoring_method,
                 verbose=True
             )
             
@@ -398,18 +427,39 @@ class AuthorshipVerification:
             print(f'Posterior probability: {self.posterior_proba}')
         
         self.accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)
-        precision, recall, _, _ = precision_recall_fscore_support(
-            y_test, y_pred, average='binary', zero_division=1.0
-        )
-        cf = confusion_matrix(y_test, y_pred).ravel()
-        
-        print(f'Precision: {precision}')
-        print(f'Recall: {recall}')
+
+        if self.config.multiclass:
+            f1 = f1_score(y_test, y_pred, average='macro', zero_division=1.0)
+            precision, recall, _, _ = precision_recall_fscore_support(
+                y_test, y_pred, average='macro', zero_division=1.0
+            )
+            print(f'Precision (macro): {precision}')
+            print(f'Recall (macro): {recall}')
+            print(f'F1 (macro): {f1}')
+
+            if self.config.multiclass and self.id_to_author:
+                target_names = [self.id_to_author[i] for i in range(len(self.id_to_author))]
+                print(f'\nPer-class metrics:')
+                print(classification_report(y_test, y_pred, target_names=target_names, zero_division=1.0))
+            else:
+                f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)
+                precision, recall, _, _ = precision_recall_fscore_support(
+                y_test, y_pred, average='binary', zero_division=1.0
+                )
+                print(f'Precision: {precision}')
+                print(f'Recall: {recall}')
+                print(f'F1: {f1}')
+                print(classification_report(y_test, y_pred, zero_division=1.0))
+
         print(f'Accuracy: {self.accuracy}')
-        print(f'F1: {f1}\n')
-        print(classification_report(y_test, y_pred, zero_division=1.0))
-        print(f'\nConfusion matrix: (tn, fp, fn, tp)\n{cf}\n')
+
+        cf = confusion_matrix(y_test, y_pred)
+        if not self.config.multiclass:
+            cf = cf.ravel()  # For binary classification
+            print(f'\nConfusion matrix: (tn, fp, fn, tp)\n{cf}\n')
+        else:
+            print(f'\nConfusion matrix:\n{cf}\n')
+
         print(f"Random seed: {self.config.random_state}")
         
         return self.accuracy, f1, cf, self.posterior_proba
@@ -421,8 +471,16 @@ class AuthorshipVerification:
         
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
+
+        if self.config.multiclass:
+            classification_type = "multiclass"
+            target_info = f"multiclass ({len(self.author_to_id)} authors)"
+        else:
+            classification_type = "binary"
+            target_info = target_author
         
         data = {
+            'Classification Type': classification_type,
             'Target author': target_author,
             'Document test': doc_name[:-2],
             'Accuracy': accuracy,
@@ -446,13 +504,18 @@ class AuthorshipVerification:
         """Run the complete authorship verification process"""
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')
-        print(f'Building LOO model for author {target}.\n')
 
+        if self.config.multiclass:
+            print(f'Building multiclass model for all authors.\n')
+        else:
+            print(f'Building binary LOO model for author {target}.\n')
+
+        authors: list[str]
         documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
         filenames = [f'{filename}_0' for filename in filenames]
         genres = ['Trattato' if 'epistola' not in filename.lower()
                 else 'Epistola' for filename in filenames]
-        
+
         print(f'Genres: {np.unique(genres, return_counts=True)}')
 
         processed_documents = self.get_processed_documents(documents, filenames)
@@ -460,21 +523,19 @@ class AuthorshipVerification:
         # replace the plain text documents with clean processed strings after spaCy
         documents = [processed_documents[filename[:-2]].text for filename in filenames]
 
-        if test_genre:
-            y = [1 if genre.rstrip() == 'Trattato' else 0 for genre in genres]
-        else:
-            y = [1 if author.rstrip() == target else 0 for author in authors]
 
-        print(np.unique(y, return_counts=True))
+        y = self.create_labels(authors, target, test_genre, genres)
+        print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
         if test_document:
-            # Se c'è test_document specifico, testa solo quello
-            test_indices = [i for i, filename in enumerate(filenames) 
-                        if test_document in filename]
+            test_indices = [i for i, filename in enumerate(filenames)
+                            if test_document in filename]
         else:
-            # Se test_document è vuoto, fa LOO sui documenti dell'autore target
-            test_indices = [i for i, (filename, author) in enumerate(zip(filenames, authors))
-                        if author.rstrip() == target]
+            if self.config.multiclass:
+                test_indices = list(range(len(documents)))
+            else:
+                test_indices = [i for i, (filename, author) in enumerate(zip(filenames, authors))
+                                if author.rstrip() == target]
 
         for i in test_indices:
             self._process_single_document(
@@ -484,7 +545,10 @@ class AuthorshipVerification:
                 )
 
         total_time = round((time.time() - start_time) / 60, 2)
-        print(f'Total time spent for model building for author {target}: {total_time} minutes.')
+        if self.config.multiclass:
+            print(f'Total time spent for multiclass model building: {total_time} minutes.')
+        else:
+            print(f'Total time spent for model building for author {target}: {total_time} minutes.')
 
 
     def _process_single_document(self, i: int, documents: List[str], y: List[int], 
@@ -528,12 +592,22 @@ class AuthorshipVerification:
             groups_dev
         )
 
-        models = [
-            (LogisticRegression(
-                random_state=self.config.random_state, 
+        if self.config.multiclass:
+            model = LogisticRegression(
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
+                multi_class='ovr',  # One-vs-rest for multiclass
+                max_iter=1000  # Increase iterations for convergence
+            )
+            model_name = 'Multiclass Logistic Regressor'
+        else:
+            model = LogisticRegression(
+                random_state=self.config.random_state,
                 n_jobs=self.config.n_jobs
-            ), 'Logistic Regressor')
-        ]
+            )
+            model_name = 'Binary Logistic Regressor'
+
+        models = [(model, model_name)]
 
         for model, model_name in models:
             print(f'\nBuilding {model_name} classifier...\n')
