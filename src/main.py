@@ -43,7 +43,7 @@ from feature_extraction.features import (
 @dataclass
 class ModelConfig:
     """Configuration for the model training and evaluation"""
-    n_jobs: int = -1
+    n_jobs: int = gi1
     segment_min_token_size: int = 500
     random_state: int = 0
     k_ratio: float = 1.0
