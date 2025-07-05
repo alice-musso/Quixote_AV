@@ -543,22 +543,28 @@ class AuthorshipVerification:
         y = self.create_labels(authors, target, test_genre, genres)
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
+        # FIXED: Determine test indices correctly
         if test_document:
             test_indices = [i for i, filename in enumerate(filenames)
                             if test_document in filename]
+            print(f'Testing on: {test_document}')
         else:
+            test_indices = list(range(len(documents)))
             if self.config.multiclass:
-                test_indices = list(range(len(documents)))
+                print(f'Full LOO evaluation: testing on all {len(test_indices)} documents (multiclass)')
             else:
-                test_indices = [i for i, (filename, author) in enumerate(zip(filenames, authors))
-                                if author.rstrip() == target]
+                print(
+                    f'Full LOO evaluation: testing on all {len(test_indices)} documents (binary classification for {target})')
+
+        print(f'Total documents to test: {len(test_indices)}')
 
         for i in test_indices:
+            print(f'\n=== Processing document {i + 1}/{len(test_indices)} ===')
             self._process_single_document(
-                i, documents, y, processed_documents, filenames, target, 
-                save_results, self.config.results_filename, 
-                self.config.results_path  
-                )
+                i, documents, y, processed_documents, filenames, target,
+                save_results, self.config.results_filename,
+                self.config.results_path
+            )
 
         total_time = round((time.time() - start_time) / 60, 2)
         if self.config.multiclass:
