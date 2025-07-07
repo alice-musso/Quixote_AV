@@ -623,8 +623,7 @@ class AuthorshipVerification:
             model = LogisticRegression(
                 random_state=self.config.random_state,
                 n_jobs=self.config.n_jobs,
-                multi_class='ovr',  # One-vs-rest for multiclass
-                max_iter=1000  # Increase iterations for convergence
+                multi_class='ovr',
             )
             model_name = 'Multiclass Logistic Regressor'
         else:
