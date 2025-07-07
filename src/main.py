@@ -43,7 +43,7 @@ from feature_extraction.features import (
 @dataclass
 class ModelConfig:
     """Configuration for the model training and evaluation"""
-    n_jobs: int = 1
+    n_jobs: int = -1
     segment_min_token_size: int = 500
     random_state: int = 0
     k_ratio: float = 1.0
@@ -264,7 +264,7 @@ class AuthorshipVerification:
                 ngram_range=(1,1)
             ),
             FeaturesPOST(n=(1,3)),
-            FeaturesMendenhall(upto=20),
+            FeaturesMendenhall(upto=27),
             FeaturesSentenceLength(),
             FeaturesCharNGram(n=(2,3)),
             FeaturesDistortedView(method = 'DVEX', function_words= spanish_function_words),
