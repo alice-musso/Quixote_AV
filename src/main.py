@@ -471,7 +471,7 @@ class AuthorshipVerification:
 
         cf = confusion_matrix(y_test, y_pred)
         if not self.config.multiclass:
-            cf = cf.ravel()  # For binary classification
+            cf = cf.ravel()
             print(f'\nConfusion matrix: (tn, fp, fn, tp)\n{cf}\n')
         else:
             print(f'\nConfusion matrix:\n{cf}\n')
@@ -497,7 +497,7 @@ class AuthorshipVerification:
         
         data = {
             'Classification Type': classification_type,
-            'Target author': target_author,
+            'Target author': target_info,
             'Document test': doc_name[:-2],
             'Accuracy': accuracy,
             'Proba': posterior_proba,
@@ -527,8 +527,14 @@ class AuthorshipVerification:
             print(f'Building binary LOO model for author {target}.\n')
 
         authors: list[str]
-        documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
-        filenames = [f'{filename}_0' for filename in filenames]
+
+        if self.config.multiclass:
+            documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
+
+        else:
+            documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
+            filenames = [f'{filename}_0' for filename in filenames]
+
         genres = ['Trattato' if 'epistola' not in filename.lower()
                 else 'Epistola' for filename in filenames]
 
@@ -543,7 +549,6 @@ class AuthorshipVerification:
         y = self.create_labels(authors, target, test_genre, genres)
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
-        # FIXED: Determine test indices correctly
         if test_document:
             test_indices = [i for i, filename in enumerate(filenames)
                             if test_document in filename]
