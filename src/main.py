@@ -528,12 +528,8 @@ class AuthorshipVerification:
 
         authors: list[str]
 
-        if self.config.multiclass:
-            documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
-
-        else:
-            documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
-            filenames = [f'{filename}_0' for filename in filenames]
+        documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
+        filenames = [f'{filename}_0' for filename in filenames]
 
         genres = ['Trattato' if 'epistola' not in filename.lower()
                 else 'Epistola' for filename in filenames]
