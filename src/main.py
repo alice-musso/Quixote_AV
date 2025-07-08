@@ -193,6 +193,8 @@ class AuthorshipVerification:
         print(f"DEBUG: X_test after slicing has {len(X_test)} items")
         print(f"DEBUG: X_test[0] length = {len(X_test[0])} characters")
 
+        X_test_original = X_test[0]
+
         X_test_frag = splitted_docs_test[0][whole_docs_len:]
         y_test_frag = splitted_docs_test[1][whole_docs_len:]
         groups_test_frag = groups_test[whole_docs_len:]
