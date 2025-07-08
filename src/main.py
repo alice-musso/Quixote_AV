@@ -39,6 +39,8 @@ from feature_extraction.features import (
     FeaturesVerbalEndings,
     # FeaturesSyllabicQuantities
 )
+import warnings
+warnings.filterwarnings("ignore")
 
 @dataclass
 class ModelConfig:
@@ -415,6 +417,17 @@ class AuthorshipVerification:
         
         print('Evaluating performance...',
             '(on fragmented text)' if len(y_test) > 110 else '\n')
+
+        # debug
+        print("=" * 50)
+        print("DEBUGGING EVALUATE_MODEL")
+
+        if len(y_test) == 1:
+            print("This is evaluating on the whole documents/ just the first fragmented text.")
+        else:
+            print("This is evaluating on fragments")
+
+        print("=" * 50)
         
         y_test = np.array(y_test * X_test.shape[0])
         y_pred = clf.predict(X_test)
@@ -483,26 +496,34 @@ class AuthorshipVerification:
     def save_results(self, target_author: str, accuracy: float, f1: float, 
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
                     doc_name: str, features: List[str], 
-                    file_name: str, path_name: str):
+                    file_name: str, path_name: str, y_test: List[int]):
         
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
 
+
         if self.config.multiclass:
-            classification_type = "multiclass"
-            target_info = f"multiclass ({len(self.author_to_id)} authors)"
+
+            unique_test_classes = sorted(set(y_test))
+            target_names = [self.id_to_author[i] for i in unique_test_classes
+                            if i in self.id_to_author]
+            target_info = target_names
         else:
-            classification_type = "binary"
             target_info = target_author
-        
+
+        if self.config.multiclass:
+            classification_type = 'multiclass'
+        else:
+            classification_type = 'binary'
+
         data = {
-            'Classification Type': classification_type,
-            'Target author': target_info,
-            'Document test': doc_name[:-2],
-            'Accuracy': accuracy,
-            'Proba': posterior_proba,
-            'Features': features
-        }
+                'Classification Type': classification_type,
+                'Target author': target_info,
+                'Document test': doc_name[:-2],
+                'Accuracy': accuracy,
+                'Proba': posterior_proba,
+                'Features': features
+            }
         
         output_path = path / file_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
