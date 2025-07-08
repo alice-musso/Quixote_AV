@@ -157,6 +157,7 @@ class AuthorshipVerification:
         print(f"DEBUG: whole_docs_len = {whole_docs_len}")
         print(f"DEBUG: Original X_test length = {len(X_test)}")
         print(f"DEBUG: Original X_test[0] length = {len(X_test[0])} characters")
+        X_test_original = X_test[0]
 
         segmentator_dev = Segmentation(
             split_policy='by_sentence',
@@ -192,8 +193,6 @@ class AuthorshipVerification:
 
         print(f"DEBUG: X_test after slicing has {len(X_test)} items")
         print(f"DEBUG: X_test[0] length = {len(X_test[0])} characters")
-
-        X_test_original = X_test[0]
 
         X_test_frag = splitted_docs_test[0][whole_docs_len:]
         y_test_frag = splitted_docs_test[1][whole_docs_len:]
