@@ -510,7 +510,7 @@ class AuthorshipVerification:
     def save_results(self, target_author: str, accuracy: float, f1: float, 
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
                     doc_name: str, features: List[str], 
-                    file_name: str, path_name: str, y_test: List[int]):
+                    file_name: str, path_name: str, y_test: List[int], y_pred: List[int]):
         
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
@@ -521,7 +521,12 @@ class AuthorshipVerification:
             unique_test_classes = sorted(set(y_test))
             target_names = [self.id_to_author[i] for i in unique_test_classes
                             if i in self.id_to_author]
-            target_info = target_names
+            target_info = str(target_names).replace('[', '').replace(']', '').replace("'", '')
+            set_prediction = sorted(set(y_pred))
+            prediction = [self.id_to_author[i] for i in set_prediction
+                          if i in self.id_to_author]
+            prediction_clean = str(prediction).replace('[', '').replace(']', '').replace("'", '')
+
         else:
             target_info = target_author
 
@@ -529,6 +534,7 @@ class AuthorshipVerification:
             classification_type = 'multiclass'
         else:
             classification_type = 'binary'
+
 
         data = {
                 'Classification Type': classification_type,
@@ -538,7 +544,10 @@ class AuthorshipVerification:
                 'Proba': posterior_proba,
                 'Features': features
             }
-        
+
+        if self.config.multiclass:
+            data['Predicted author'] = prediction_clean
+
         output_path = path / file_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
