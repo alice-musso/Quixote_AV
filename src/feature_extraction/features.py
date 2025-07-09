@@ -609,31 +609,44 @@ class FeaturesPOST:
     
 
 class FeaturesDEP:
-    def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', **tfidf_kwargs):
+    def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', use_words= True, **tfidf_kwargs):
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
         self.norm = norm
         self.tfidf_kwargs = tfidf_kwargs
         self.savecache = savecache
         self.n = n
+        self.use_words = use_words
         self.counter = CountVectorizer(analyzer=self.dep_analyzer)
         self.vectorizer = TfidfVectorizer(analyzer=self.dep_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
     
     def __str__(self) -> str:
         return f'FeaturesDEP [n-gram range: ({self.n[0]},{self.n[1]})]'
-    
 
     def dep_analyzer(self, doc):
-        ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n))
-        ngram_range = slice(*ngram_range)
-        ngram_deps = []
+        ngram_range = self.tfidf_kwargs.get('ngram_range', self.n)
 
-        for sentence in doc.sents:
-            sentence_unigram_deps = [token.dep_ if token.dep_ != '' else 'Unk' for token in sentence] #.split(':')[0]
-            for n in list(range(ngram_range.start, ngram_range.stop+1)):
-                sentence_ngram_deps = ['-'.join(ngram) for ngram in list(ngrams(sentence_unigram_deps, n))]
-                ngram_deps.extend(sentence_ngram_deps)
-        return ngram_deps
+        if self.use_words:
+            word_dep_features = []
+            for token in doc:
+                if not token.is_punct and not token.is_space:
+                    dep = token.dep_ if token.dep_ != '' else 'Unk'
+                    word_dep_features.append(f"{token.text}:{dep}")
+            return word_dep_features
+        else:
+            ngram_deps = []
+            for sentence in doc.sents:
+                sentence_features = []
+
+                for token in sentence:
+                    dep = token.dep_ if token.dep_ != '' else 'Unk'
+                    sentence_features.append(dep)
+
+                for n in range(ngram_range[0], ngram_range[1] + 1):
+                    sentence_ngram_deps = ['-'.join(ngram) for ngram in list(ngrams(sentence_features, n))]
+                    ngram_deps.extend(sentence_ngram_deps)
+
+            return ngram_deps
 
 
     def fit(self, documents, y=None):
