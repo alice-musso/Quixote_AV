@@ -285,6 +285,7 @@ class AuthorshipVerification:
             FeaturesCharNGram(n=(2,3)),
             FeaturesDistortedView(method = 'DVEX', function_words= spanish_function_words),
             FeaturesPunctuation()
+            FeaturesDEP(n=(1,3))
         ]
 
         hstacker = HstackFeatureSet(vectorizers)
