@@ -427,7 +427,7 @@ class AuthorshipVerification:
 
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
-                    ) -> Tuple[float, float, np.ndarray, float, np.ndarray]:
+                    ) -> Tuple[float, float, np.ndarray, float]:
         
         print('Evaluating performance...',
             '(on fragmented text)' if len(y_test) > 110 else '\n')
@@ -506,7 +506,7 @@ class AuthorshipVerification:
 
         print(f"Random seed: {self.config.random_state}")
         
-        return self.accuracy, f1, cf, self.posterior_proba, y_pred_list
+        return self.accuracy, f1, cf, self.posterior_proba,
 
     def save_results(self, target_author: str, accuracy: float, f1: float, 
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
@@ -523,11 +523,6 @@ class AuthorshipVerification:
             target_names = [self.id_to_author[i] for i in unique_test_classes
                             if i in self.id_to_author]
             target_info = str(target_names).replace('[', '').replace(']', '').replace("'", '')
-
-            set_prediction = sorted(set(y_pred))
-            prediction = [self.id_to_author[i] for i in set_prediction
-                          if i in self.id_to_author]
-            prediction_clean = str(prediction).replace('[', '').replace(']', '').replace("'", '')
 
         else:
             target_info = target_author
@@ -546,9 +541,6 @@ class AuthorshipVerification:
                 'Proba': posterior_proba,
                 'Features': features
             }
-
-        if self.config.multiclass:
-            data['Predicted author'] = prediction_clean
 
         output_path = path / file_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
