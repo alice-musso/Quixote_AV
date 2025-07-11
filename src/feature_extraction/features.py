@@ -609,7 +609,7 @@ class FeaturesPOST:
     
 
 class FeaturesDEP:
-    def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', use_words= True, **tfidf_kwargs):
+    def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', use_words= False, **tfidf_kwargs):
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
         self.norm = norm
