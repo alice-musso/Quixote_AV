@@ -75,7 +75,7 @@ def _should_skip_file(filename: str, filters: dict) -> bool:
         'remove_egloghe': lambda f: 'egloga' in f.lower(),
         'remove_anonymus_files': lambda f: any(x in f.lower() for x in ['misc', 'anonymus']),
         'remove_monarchia': lambda f: 'monarchia' in f.lower(),
-        'remove_quijote': lambda f: 'don quijote' in f.lower(),
+        'remove_quijote': lambda f: ('cervantes' in f.lower() and 'don quijote' in f.lower()),
         'remove_test': lambda f: 'avellaneda' in f.lower(),
     }
     return any(check(filename) for flag, check in checks.items() if filters.get(flag))
