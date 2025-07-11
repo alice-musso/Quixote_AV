@@ -572,6 +572,8 @@ class AuthorshipVerification:
         documents, authors, filenames = self.load_dataset(test_document, path=corpus_path)
         filenames = [f'{filename}_0' for filename in filenames]
 
+        print(f'Available filenames: {filenames}')
+
         genres = ['Trattato' if 'epistola' not in filename.lower()
                 else 'Epistola' for filename in filenames]
 
@@ -587,9 +589,19 @@ class AuthorshipVerification:
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
         if test_document:
-            test_indices = [i for i, filename in enumerate(filenames)
-                            if test_document in filename]
+            test_indices = []
+            test_document_normalized = test_document.strip()
+            for i, filename in enumerate(filenames):
+                filename_normalized = filename.strip()
+                if test_document_normalized in filename_normalized:
+                    test_indices.append(i)
+
             print(f'Testing on: {test_document}')
+            print(f'Found test indices: {test_indices}')
+            if not test_indices:
+                print(f'ERROR: Test document "{test_document}" not found in available filenames')
+                print(f'Available filenames: {filenames}')
+                return
         else:
             test_indices = list(range(len(documents)))
             if self.config.multiclass:
