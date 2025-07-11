@@ -119,6 +119,8 @@ class AuthorshipVerification:
             print(f'ERROR: Path {path} does not exist!')
             return [], [], []
 
+        print(f'Calling load_corpus with remove_test={False if test_document == "Avellaneda - Quijote apocrifo" else True}')
+
         documents, authors, filenames = load_corpus(
             path=path, 
             remove_epistles=False,
@@ -129,6 +131,7 @@ class AuthorshipVerification:
             remove_monarchia= False,
             remove_quijote= True,
         )
+        print(f'After load_corpus, filenames: {filenames}')
         print('Data loaded.')
         return documents, authors, filenames
 
