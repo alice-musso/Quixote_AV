@@ -18,7 +18,7 @@ from sklearn.metrics import (
 )
 import csv
 import time
-
+from pathlib import Path
 from torch.ao.quantization.pt2e.utils import remove_tensor_overload_for_qdq_ops
 from tqdm import tqdm
 import nltk
@@ -104,6 +104,21 @@ class AuthorshipVerification:
     def load_dataset(self, test_document: str, path: str = 'src/data/corpus') -> Tuple[List[str], List[str], List[str]]:
         
         print('Loading data...')
+        print(f'Looking for files in: {path}')
+
+        corpus_path = Path(path)
+        if corpus_path.exists():
+            all_files = list(corpus_path.glob('*.txt'))
+            print(f'All .txt files found: {[f.name for f in all_files]}')
+
+            # Look for files that might match your test document
+            matching_files = [f.name for f in all_files if
+                              'avellaneda' in f.name.lower() or 'quijote' in f.name.lower() or 'apocrifo' in f.name.lower()]
+            print(f'Files matching Avellaneda/Quijote/Apocrifo: {matching_files}')
+        else:
+            print(f'ERROR: Path {path} does not exist!')
+            return [], [], []
+
         documents, authors, filenames = load_corpus(
             path=path, 
             remove_epistles=False,
