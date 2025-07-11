@@ -18,6 +18,8 @@ from sklearn.metrics import (
 )
 import csv
 import time
+
+from torch.ao.quantization.pt2e.utils import remove_tensor_overload_for_qdq_ops
 from tqdm import tqdm
 import nltk
 nltk.download('punkt_tab')
@@ -106,9 +108,11 @@ class AuthorshipVerification:
             path=path, 
             remove_epistles=False,
             remove_test=False if test_document == 'Avellaneda - Quijote apocrifo' else True,
-            remove_egloghe=False,
-            remove_anonymus_files=True,
-            remove_monarchia=False,
+            remove_unique_authors= True,
+            remove_egloghe= False,
+            remove_anonymus_files = False,
+            remove_monarchia= False,
+            remove_quijote= True,
         )
         print('Data loaded.')
         return documents, authors, filenames
@@ -284,7 +288,7 @@ class AuthorshipVerification:
             FeaturesSentenceLength(),
             FeaturesDistortedView(method = 'DVEX', function_words= spanish_function_words),
             FeaturesPunctuation(),
-            FeaturesDEP(n=(2,3))
+            FeaturesDEP(n=(2,3), use_words= True)
         ]
 
         hstacker = HstackFeatureSet(vectorizers)
@@ -446,7 +450,7 @@ class AuthorshipVerification:
         y_test = np.array(y_test * X_test.shape[0])
         y_pred = clf.predict(X_test)
         y_pred_list = y_pred.tolist()
-        
+
         if return_proba:
             probabilities = clf.predict_proba(X_test)
             self.posterior_proba = np.median(
@@ -511,14 +515,13 @@ class AuthorshipVerification:
     def save_results(self, target_author: str, accuracy: float, f1: float, 
                     posterior_proba: float, cf: np.ndarray, model_name: str, 
                     doc_name: str, features: List[str], 
-                    file_name: str, path_name: str, y_test: List[int], y_pred: List[int]):
+                    file_name: str, path_name: str, y_test: List[int]):
         
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
 
 
         if self.config.multiclass:
-
             unique_test_classes = sorted(set(y_test))
             target_names = [self.id_to_author[i] for i in unique_test_classes
                             if i in self.id_to_author]
