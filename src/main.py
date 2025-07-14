@@ -124,12 +124,12 @@ class AuthorshipVerification:
         documents, authors, filenames = load_corpus(
             path=path, 
             remove_epistles=False,
-            remove_test=False if test_document == 'Avellaneda - Quijote apocrifo' else True,
-            remove_unique_authors= True,
+            remove_test=False if test_document == "Avellaneda - Quijote apocrifo" else True,
+            remove_unique_authors=False,
             remove_egloghe= False,
             remove_anonymus_files = False,
             remove_monarchia= False,
-            remove_quijote= True,
+            remove_quijote= False,
         )
         print(f'After load_corpus, filenames: {filenames}')
         print('Data loaded.')
@@ -449,7 +449,7 @@ class AuthorshipVerification:
 
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
-                    ) -> Tuple[float, float, np.ndarray, float]:
+                    ) -> Tuple[float, float, np.ndarray, float, Optional[str]]:
         
         print('Evaluating performance...',
             '(on fragmented text)' if len(y_test) > 110 else '\n')
@@ -468,6 +468,12 @@ class AuthorshipVerification:
         y_test = np.array(y_test * X_test.shape[0])
         y_pred = clf.predict(X_test)
         y_pred_list = y_pred.tolist()
+
+        predicted_author = None
+        if self.config.multiclass and len(y_pred) > 0:
+            single_pred = y_pred[0]
+            predicted_author = self.id_to_author.get(single_pred, f"Unknown_{single_pred}")
+            print(f'Predicted author: {predicted_author}')
 
         if return_proba:
             probabilities = clf.predict_proba(X_test)
@@ -528,12 +534,12 @@ class AuthorshipVerification:
 
         print(f"Random seed: {self.config.random_state}")
         
-        return self.accuracy, f1, cf, self.posterior_proba,
+        return self.accuracy, f1, cf, self.posterior_proba, predicted_author
 
-    def save_results(self, target_author: str, accuracy: float, f1: float, 
-                    posterior_proba: float, cf: np.ndarray, model_name: str, 
-                    doc_name: str, features: List[str], 
-                    file_name: str, path_name: str, y_test: List[int]):
+    def save_results(self, target_author: str, accuracy: float, f1: float,
+                     posterior_proba: float, model_name: str,
+                     doc_name: str, features: List[str],
+                     file_name: str, path_name: str, y_test: List[int], predicted_author: Optional[str] = None):
         
         path = Path(path_name)
         print(f'Saving results in {file_name}\n')
@@ -557,6 +563,7 @@ class AuthorshipVerification:
         data = {
                 'Classification Type': classification_type,
                 'Target author': target_info,
+                'Predicted author': predicted_author if predicted_author else 'N/A',
                 'Document test': doc_name[:-2],
                 'Accuracy': accuracy,
                 'Proba': posterior_proba,
@@ -705,15 +712,15 @@ class AuthorshipVerification:
         for model, model_name in models:
             print(f'\nBuilding {model_name} classifier...\n')
             clf = self.train_model(X_dev, y_dev, groups_dev, model, model_name)
-            acc, f1, cf, posterior_proba = self.evaluate_model(
+            acc, f1, cf, posterior_proba, predicted_author = self.evaluate_model(
                 clf, X_test, y_test
             )
 
             if save_results:
                 self.save_results(
-                    target, acc, f1, posterior_proba, cf, model_name,
+                    target, acc, f1, posterior_proba, model_name,
                     groups_test[0][:-2], feature_idxs.keys(),
-                    file_name, path_name, y_test)
+                    file_name, path_name, y_test, predicted_author)
 
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(f'Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes.')

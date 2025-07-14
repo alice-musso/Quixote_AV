@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 import re
 from collections import Counter
+from sympy import false
 
 # ------------------------------------------------------------------------
 # document loading routine
@@ -23,7 +24,7 @@ def get_spanish_function_words():
 
 # data_loader.py
 
-def load_corpus(path: str, **filters) -> tuple[list[str], list[str], list[str]]:
+def load_corpus(path: str, remove_test = false, **filters) -> tuple[list[str], list[str], list[str]]:
     """Load corpus documents with optional filtering.
     
     Args:
@@ -78,6 +79,9 @@ def _should_skip_file(filename: str, filters: dict) -> bool:
         'remove_quijote': lambda f: ('cervantes' in f.lower() and 'don quijote' in f.lower()),
         'remove_test': lambda f: 'avellaneda' in f.lower(),
     }
+    active_flags = [flag for flag in filters if filters.get(flag)]
+    print(f'Checking file: {filename}, active filters: {active_flags}')
+
     return any(check(filename) for flag, check in checks.items() if filters.get(flag))
 
 def _clean_text(text: str) -> str:
