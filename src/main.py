@@ -481,6 +481,7 @@ class AuthorshipVerification:
                 [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
             )
             print(f'Posterior probability: {self.posterior_proba}')
+            print (f'lenght of posterior probability: {len(probabilities)}')
         
         self.accuracy = accuracy_score(y_test, y_pred)
 
