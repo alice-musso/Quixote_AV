@@ -457,9 +457,9 @@ class AuthorshipVerification:
             )
 
             if self.config.multiclass:
-                scoring_method = make_scorer(f1_score, average='macro', zero_division=0)
+                scoring_method = make_scorer(f1_score, average='macro', zero_division=1)
             else:
-                scoring_method = make_scorer(f1_score, zero_division=0)
+                scoring_method = make_scorer(f1_score, zero_division=1)
             
             grid_search = GridSearchCV(
                 model,
@@ -666,8 +666,8 @@ class AuthorshipVerification:
                     if test_document_normalized in filename_normalized:
                         test_indices.append(test_idx)
 
-                print(f'Testing on: {test_documents}')
-                print(f'Found test indices: {test_indices}')
+                # print(f'Testing on: {test_documents}')
+                # print(f'Found test indices: {test_indices}')
                 if not test_indices:
                     print(f'ERROR: Test document "{test_documents}" not found in available filenames')
                     print(f'Available filenames: {filenames}')
@@ -751,7 +751,7 @@ class AuthorshipVerification:
             model = LogisticRegression(
                 random_state=self.config.random_state,
                 n_jobs=self.config.n_jobs,
-                multi_class='ovr',
+                # multi_class='ovr',
             )
             model_name = 'Multiclass Logistic Regressor'
         else:
