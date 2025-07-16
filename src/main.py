@@ -518,6 +518,8 @@ class AuthorshipVerification:
             )
             proba_values = [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
             print(f'Posterior probability: {self.posterior_proba}')
+            print(f'Posterior probability vector: {probabilities}')
+
 
             print (f'lenght of posterior probability: {len(proba_values)}')
         
