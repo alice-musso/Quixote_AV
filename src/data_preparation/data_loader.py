@@ -63,7 +63,7 @@ def load_corpus(path: str, remove_unique_authors, remove_quixote, remove_avellan
         test_documents = [test_documents]
     for test in test_documents:
         if test not in string_document_set:
-            files += [Path(join(path, test))]
+            files += [Path(join(path, test +".txt"))]
 
 
     for file in tqdm(files, desc=f'Loading corpus from {path}'):

@@ -45,11 +45,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 AVELLANEDA_DOCUMENTS = [
-    'Avellaneda - Quijote apocrifo.txt',
-    'Avellaneda - Quijote apocrifo nucleo.txt',
-    'Avellaneda - Quijote apocrifo prologo.txt',
-    'Avellaneda - Quijote apocrifo prima novelle.txt',
-    'Avellaneda - Quijote apocrifo seconda novelle.txt'
+    'Avellaneda - Quijote apocrifo',
+    'Avellaneda - Quijote apocrifo nucleo',
+    'Avellaneda - Quijote apocrifo prologo',
+    'Avellaneda - Quijote apocrifo prima novelle',
+    'Avellaneda - Quijote apocrifo seconda novelle'
 ]
 
 @dataclass
@@ -626,6 +626,9 @@ class AuthorshipVerification:
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')
 
+        if isinstance(test_documents, str):
+            test_documents = [test_documents]
+
         if self.config.multiclass:
             print(f'Building multiclass model for all authors.\n')
         else:
@@ -635,6 +638,7 @@ class AuthorshipVerification:
 
         documents, authors, filenames = self.load_dataset(test_documents, path=corpus_path)
         filenames = [f'{filename}_0' for filename in filenames]
+        test_documents = [f'{filename}_0' for filename in test_documents]
 
         print(f'Available filenames: {filenames}')
 
@@ -652,8 +656,6 @@ class AuthorshipVerification:
         y = self.create_labels(authors, target, test_genre, genres)
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
-        if isinstance(test_documents, str):
-            test_documents = [test_documents]
 
         if test_documents:
             test_indices = []
