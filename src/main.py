@@ -6,7 +6,8 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 import numpy as np
 import spacy
 from sklearn.base import BaseEstimator
-from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 from sklearn.model_selection import StratifiedGroupKFold, GridSearchCV
 from sklearn.metrics import (
     f1_score, 
@@ -63,7 +64,7 @@ class ModelConfig:
     def from_args(cls):
         """Create config from command line args"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--test-document', default='Avellaneda - Quijote apocrifo',
+        parser.add_argument('--test-document', default='Avellaneda - Quijote apocrifo prologo',
                         help='Test document (empty=full LOO, author=author LOO, doc=specific doc)')
         parser.add_argument('--target', default='Cervantes',
                         help='Target author')
@@ -124,12 +125,12 @@ class AuthorshipVerification:
         documents, authors, filenames = load_corpus(
             path=path, 
             remove_epistles=False,
-            remove_test=False if test_document == "Avellaneda - Quijote apocrifo" else True,
+            remove_test= False if test_document == ["Avellaneda - Quijote apocrifo"] else True,
             remove_unique_authors=False,
             remove_egloghe= False,
             remove_anonymus_files = False,
             remove_monarchia= False,
-            remove_quijote= False,
+            remove_quijote= True,
         )
         print(f'After load_corpus, filenames: {filenames}')
         print('Data loaded.')
@@ -435,17 +436,24 @@ class AuthorshipVerification:
             grid_search = GridSearchCV(
                 model,
                 param_grid=param_grid,
+                refit= False,
                 cv=cv,
                 n_jobs=self.config.n_jobs,
                 scoring= scoring_method,
-                verbose=True
+                verbose= True,
             )
+
             
             grid_search.fit(X_dev, y_dev, groups=groups_dev)
             print(f'Model fitted. Best params: {grid_search.best_params_}')
             print(f'Best scores: {grid_search.best_score_}\n')
+
+            h = LogisticRegression(**grid_search.best_params_)
+
+            h1= CalibratedClassifierCV(h, n_jobs= self.config.n_jobs).fit(X_dev, y_dev)
+
             
-            return grid_search.best_estimator_
+            return h1
 
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
@@ -480,8 +488,10 @@ class AuthorshipVerification:
             self.posterior_proba = np.median(
                 [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
             )
+            proba_values = [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
             print(f'Posterior probability: {self.posterior_proba}')
-            print (f'lenght of posterior probability: {len(probabilities)}')
+
+            print (f'lenght of posterior probability: {len(proba_values)}')
         
         self.accuracy = accuracy_score(y_test, y_pred)
 
@@ -582,7 +592,7 @@ class AuthorshipVerification:
         
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
-    def run(self, target: str, test_document: str, save_results: bool = True, 
+    def run(self, target: str, test_document: str, multiclass: bool = True,  save_results: bool = True,
             filter_dataset: bool = False, test_genre: bool = False, corpus_path='../corpus'):
         """Run the complete authorship verification process"""
         start_time = time.time()
@@ -735,6 +745,7 @@ def main():
     av_system.run(
         target=target,
         test_document=test_document,
+        multiclass=config.multiclass,
         save_results=config.save_res,
         filter_dataset=False,
         test_genre=config.test_genre
