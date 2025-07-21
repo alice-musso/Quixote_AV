@@ -489,17 +489,6 @@ class AuthorshipVerification:
         
         print('Evaluating performance...',
             '(on fragmented text)' if len(y_test) > 110 else '\n')
-
-        # debug
-        print("=" * 50)
-        print("DEBUGGING EVALUATE_MODEL")
-
-        if len(y_test) == 1:
-            print("This is evaluating on the whole documents/ just the first fragmented text.")
-        else:
-            print("This is evaluating on fragments")
-
-        print("=" * 50)
         
         y_test = np.array(y_test * X_test.shape[0])
         y_pred = clf.predict(X_test)
@@ -749,34 +738,24 @@ class AuthorshipVerification:
             groups_dev
         )
 
-        if self.config.multiclass:
-            model = LogisticRegression(
-                random_state=self.config.random_state,
-                n_jobs=self.config.n_jobs,
-                # multi_class='ovr',
-            )
-            model_name = 'Multiclass Logistic Regressor'
-        else:
-            model = LogisticRegression(
-                random_state=self.config.random_state,
-                n_jobs=self.config.n_jobs
-            )
-            model_name = 'Binary Logistic Regressor'
-
-        models = [(model, model_name)]
-
-        for model, model_name in models:
-            print(f'\nBuilding {model_name} classifier...\n')
-            clf = self.train_model(X_dev, y_dev, groups_dev, model, model_name)
-            acc, f1, cf, posterior_proba, predicted_author = self.evaluate_model(
-                clf, X_test, y_test
+        model = LogisticRegression(
+            random_state=self.config.random_state,
+            n_jobs=self.config.n_jobs,
             )
 
-            if save_results:
-                self.save_results(
-                    target, acc, f1, posterior_proba, model_name,
-                    groups_test[0][:-2], feature_idxs.keys(),
-                    file_name, path_name, y_test, predicted_author)
+
+
+        print(f'\nBuilding classifier...\n')
+        clf = self.train_model(X_dev, y_dev, groups_dev, model, 'LogisticRegression')
+        acc, f1, cf, posterior_proba, predicted_author = self.evaluate_model(
+            clf, X_test, y_test
+            )
+
+        if save_results:
+            self.save_results(
+                target, acc, f1, posterior_proba, model,
+                groups_test[0][:-2], feature_idxs.keys(),
+                file_name, path_name, y_test, predicted_author)
 
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(f'Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes.')
