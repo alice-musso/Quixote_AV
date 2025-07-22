@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any, Union
 import numpy as np
 import spacy
+import pickle
 from sklearn.base import BaseEstimator
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
@@ -43,6 +44,7 @@ from feature_extraction.features import (
 )
 import warnings
 warnings.filterwarnings("ignore")
+import joblib
 
 AVELLANEDA_DOCUMENTS = [
     'Avellaneda - Quijote apocrifo',
@@ -205,9 +207,9 @@ class AuthorshipVerification:
         print('Segmenting data...')
         whole_docs_len = len(y_test)
 
-        print(f"DEBUG: whole_docs_len = {whole_docs_len}")
-        print(f"DEBUG: Original X_test length = {len(X_test)}")
-        print(f"DEBUG: Original X_test[0] length = {len(X_test[0])} characters")
+        #print(f"DEBUG: whole_docs_len = {whole_docs_len}")
+        #print(f"DEBUG: Original X_test length = {len(X_test)}")
+        #print(f"DEBUG: Original X_test[0] length = {len(X_test[0])} characters")
         X_test_original = X_test[0]
 
         segmentator_dev = Segmentation(
@@ -231,8 +233,8 @@ class AuthorshipVerification:
         )
         groups_test = segmentator_test.groups
 
-        print(f"DEBUG: After segmentation, splitted_docs_test[0] has {len(splitted_docs_test[0])} fragments")
-        print(f"DEBUG: Fragment lengths: {[len(frag) for frag in splitted_docs_test[0]]}")
+       # print(f"DEBUG: After segmentation, splitted_docs_test[0] has {len(splitted_docs_test[0])} fragments")
+        #print(f"DEBUG: Fragment lengths: {[len(frag) for frag in splitted_docs_test[0]]}")
 
         X_dev = splitted_docs_dev[0]
         y_dev = splitted_docs_dev[1]
@@ -242,15 +244,15 @@ class AuthorshipVerification:
         y_test = splitted_docs_test[1][:whole_docs_len]
         groups_test_entire_docs = groups_test[:whole_docs_len]
 
-        print(f"DEBUG: X_test after slicing has {len(X_test)} items")
-        print(f"DEBUG: X_test[0] length = {len(X_test[0])} characters")
+       # print(f"DEBUG: X_test after slicing has {len(X_test)} items")
+       # print(f"DEBUG: X_test[0] length = {len(X_test[0])} characters")
 
         X_test_frag = splitted_docs_test[0][whole_docs_len:]
         y_test_frag = splitted_docs_test[1][whole_docs_len:]
         groups_test_frag = groups_test[whole_docs_len:]
 
-        print(f"DEBUG: X_test_frag has {len(X_test_frag)} fragments")
-        print(f"DEBUG: Are X_test[0] and original X_test[0] the same? {X_test[0] == X_test_original}")
+        #print(f"DEBUG: X_test_frag has {len(X_test_frag)} fragments")
+       # print(f"DEBUG: Are X_test[0] and original X_test[0] the same? {X_test[0] == X_test_original}")
 
         print('Segmentation complete.')
         
