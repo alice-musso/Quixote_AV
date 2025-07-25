@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any, Union
 import numpy as np
 import spacy
-import pickle
 from sklearn.base import BaseEstimator
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
@@ -42,9 +41,10 @@ from feature_extraction.features import (
     FeaturesVerbalEndings,
     # FeaturesSyllabicQuantities
 )
+from model_serialization.serialization import Serialization
+from model_serialization.serialization import Labels
 import warnings
 warnings.filterwarnings("ignore")
-import joblib
 
 AVELLANEDA_DOCUMENTS = [
     'Avellaneda - Quijote apocrifo',
@@ -67,7 +67,8 @@ class ModelConfig:
     test_genre: bool = False
     multiclass: bool = False
     results_filename: str = 'results.csv'
-    results_path: str = './results'   
+    results_path: str = './results'
+    authors_dir: str = './authorslabel'
 
 
 
@@ -91,6 +92,17 @@ class ModelConfig:
                     help='Directory path for saving results')
         parser.add_argument('--keep_quixote', action='store_true',
                             help='Keeps both parts of Quixote')
+        parser.add_argument('--save-model', action='store_true',
+                            help='Save trained models to disk')
+        parser.add_argument('--load-model', type=str, default=None,
+                            help='Path to load a pre-trained model from')
+        parser.add_argument('--models-dir', type=str, default='./saved_models',
+                            help='Directory to save/load models')
+        parser.add_argument('--model-name', type=str, default=None,
+                            help='Custom name for saved model (auto-generated if not provided)')
+        parser.add_argument('--authors-dir', type=str, default='./authorslabel',
+                            help='Directory for author label mappings')
+
         args = parser.parse_args()
 
         if '--target' in sys.argv and '--test-document' not in sys.argv:
@@ -101,6 +113,11 @@ class ModelConfig:
         config.results_path = args.results_path
         config.save_res = args.save_res
         config.multiclass = args.multiclass
+        config.authors_dir = args.authors_dir
+        config.save_model = args.save_model
+        config.load_model = args.load_model
+        config.models_dir = args.models_dir
+        config.model_name = args.model_name
         config.args = args
 
         if args.test_document == "":
@@ -124,8 +141,12 @@ class AuthorshipVerification:
         self.nlp = nlp
         self.accuracy = 0
         self.posterior_proba = 0
+
+        self.labels_manager = Labels(authors_dir=config.authors_dir)
         self.author_to_id = {}
         self.id_to_author = {}
+
+        self.model_serializer = Serialization(models_dir=config.models_dir)
         
     def load_dataset(self, test_documents: str, path: str = 'src/data/corpus') -> Tuple[List[str], List[str], List[str]]:
         
@@ -158,13 +179,42 @@ class AuthorshipVerification:
             return [1 if genre.rstrip() == 'Trattato' else 0 for genre in genres]
 
         if self.config.multiclass:
-            unique_authors = list(set(author.rstrip() for author in authors))
-            self.author_to_id = {author: i for i, author in enumerate(unique_authors)}
+
+            author_to_id_path = Path(self.config.authors_dir) / "author_to_id.json"
+            #id_to_author_path = Path(self.config.authors_dir) / "id_to_author.json"
+
+            mappings_loaded = False
+
+            if author_to_id_path.exists():
+                try:
+                    print("Loading existing author mappings...")
+                    self.author_to_id = self.labels_manager.load_author_to_id(str(author_to_id_path))
+                    #self.id_to_author = self.labels_manager.load_id_to_author(str(id_to_author_path))
+
+                    mappings_loaded = True
+                    print(f"Loaded existing mappings for {len(self.author_to_id)} authors")
+                    print(f"Author mapping: {self.author_to_id}")
+
+                except Exception as e:
+                    print(f"Error loading existing mappings: {e}")
+                    print("Creating new mappings...")
+                    mappings_loaded = False
+
+            if not mappings_loaded:
+                print("Creating new author mappings...")
+                unique_authors = sorted(list(set(author.rstrip() for author in authors)))
+
+                self.labels_manager.save_author_to_id(unique_authors)
+                self.author_to_id = self.labels_manager.author_to_id
+
+                #self.labels_manager.save_id_to_author(self.author_to_id)
+                #self.id_to_author = self.labels_manager.id_to_author
+                #self.id_to_author = {int(k): v for k, v in self.labels_manager.id_to_author.items()}
+
+                print(f"Created new mappings for {len(unique_authors)} authors")
+                print(f"Author mapping: {self.author_to_id}")
+
             self.id_to_author = {i: author for author, i in self.author_to_id.items()}
-
-            print(f"Multiclass mode: {len(unique_authors)} authors")
-            print(f"Author mapping: {self.author_to_id}")
-
             return [self.author_to_id[author.rstrip()] for author in authors]
 
         else:
@@ -443,7 +493,7 @@ class AuthorshipVerification:
             
         return feature_sets_idxs
 
-    def train_model(self, X_dev: np.ndarray, y_dev: List[int], 
+    def train_model(self, X_dev: np.ndarray, y_dev: List[int],
                     groups_dev: List[str], model: BaseEstimator, 
                     model_name: str) -> BaseEstimator:
             
@@ -484,6 +534,39 @@ class AuthorshipVerification:
 
             
             return h1
+
+    def save_trained_model(self, model: BaseEstimator, target_author: str,
+                          test_document: str) -> str:
+        """Save the trained model and complete system"""
+
+        if not self.config.save_model:
+            return
+
+        if self.config.model_name:
+            model_name = self.config.model_name
+        else:
+            classification_type = "multiclass" if self.config.multiclass else "binary"
+            model_name = f"{classification_type}"
+
+        try:
+            model_path = self.model_serializer.save_model(model, f"model_{model_name}")
+            print(f"Model saved to: {model_path}")
+
+        except Exception as e:
+            print(f"Error saving model: {e}")
+
+        filepath = self.model_serializer.save_model( model=model )
+        return filepath
+
+    def load_pretrained_model(self, filepath: str) -> Optional[BaseEstimator]:
+        """Load a pre-trained model"""
+        try:
+            model = self.model_serializer.load_model(filepath)
+            print(f"Model loaded successfully")
+            return model
+        except Exception as e:
+            print(f"Error loading model from {filepath}: {e}")
+            return None
 
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
@@ -526,7 +609,6 @@ class AuthorshipVerification:
             print(f'F1 (macro): {f1}')
 
             if self.config.multiclass and self.id_to_author:
-
                 unique_test_classes = sorted(set(y_test))
                 target_names = [self.id_to_author[i] for i in unique_test_classes
                                 if i in self.id_to_author]
@@ -535,7 +617,6 @@ class AuthorshipVerification:
                 print(f'Classes in test data: {unique_test_classes}')
                 print(f'Corresponding target names: {target_names}')
 
-                # Use labels parameter to specify which classes to include
                 print(classification_report(
                     y_test, y_pred,
                     labels=unique_test_classes,
@@ -578,9 +659,15 @@ class AuthorshipVerification:
 
 
         if self.config.multiclass:
-            unique_test_classes = sorted(set(y_test))
-            target_names = [self.id_to_author[i] for i in unique_test_classes
-                            if i in self.id_to_author]
+            if self.config.load_model and len(y_test):
+                unique_test_classes = sorted(set(y_test))
+                target_names = [self.id_to_author.get[i] for i in unique_test_classes
+                                if i in self.id_to_author.get]
+            else:
+                unique_test_classes = sorted(set(y_test))
+                target_names = [self.id_to_author[i] for i in unique_test_classes
+                                if i in self.id_to_author]
+
             target_info = str(target_names).replace('[', '').replace(']', '').replace("'", '')
 
         else:
@@ -647,6 +734,7 @@ class AuthorshipVerification:
 
 
         y = self.create_labels(authors, target, test_genre, genres)
+
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
 
@@ -740,18 +828,34 @@ class AuthorshipVerification:
             groups_dev
         )
 
-        model = LogisticRegression(
-            random_state=self.config.random_state,
-            n_jobs=self.config.n_jobs,
+        if self.config.load_model:
+            print(f"Loading pre-trained model from: {self.config.load_model}")
+            model = self.load_pretrained_model(self.config.load_model)
+            if model is None:
+                print("Failed to load model, training new one...")
+                model = LogisticRegression(
+                    random_state=self.config.random_state,
+                    n_jobs=self.config.n_jobs,
+                )
+                print(f'\nBuilding classifier...\n')
+                clf = self.train_model(X_dev, y_dev, groups_dev, model, 'LogisticRegression')
+            else:
+                clf = model
+
+        else:
+            model = LogisticRegression(
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
             )
+            print(f'\nBuilding classifier...\n')
+            clf = self.train_model(X_dev, y_dev, groups_dev, model, 'LogisticRegression')
 
-
-
-        print(f'\nBuilding classifier...\n')
-        clf = self.train_model(X_dev, y_dev, groups_dev, model, 'LogisticRegression')
         acc, f1, cf, posterior_proba, predicted_author = self.evaluate_model(
             clf, X_test, y_test
-            )
+        )
+
+        doc_name = groups_test[0][:-2] if groups_test else f"doc_{test_idx}"
+        self.save_trained_model(clf, target, doc_name)
 
         if save_results:
             self.save_results(
