@@ -593,9 +593,6 @@ class AuthorshipVerification:
             proba_values = [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
             print(f'Posterior probability: {self.posterior_proba}')
             print(f'Posterior probability vector: {probabilities}')
-
-
-            print (f'lenght of posterior probability: {len(proba_values)}')
         
         self.accuracy = accuracy_score(y_test, y_pred)
 
@@ -604,9 +601,9 @@ class AuthorshipVerification:
             precision, recall, _, _ = precision_recall_fscore_support(
                 y_test, y_pred, average='macro', zero_division=1.0
             )
-            print(f'Precision (macro): {precision}')
-            print(f'Recall (macro): {recall}')
-            print(f'F1 (macro): {f1}')
+            #print(f'Precision (macro): {precision}')
+            #print(f'Recall (macro): {recall}')
+            #print(f'F1 (macro): {f1}')
 
             if self.config.multiclass and self.id_to_author:
                 unique_test_classes = sorted(set(y_test))
@@ -617,26 +614,26 @@ class AuthorshipVerification:
                 print(f'Classes in test data: {unique_test_classes}')
                 print(f'Corresponding target names: {target_names}')
 
-                print(classification_report(
-                    y_test, y_pred,
-                    labels=unique_test_classes,
-                    target_names=target_names,
-                    zero_division=1.0
-                ))
-            else:
-                print(classification_report(y_test, y_pred_list, zero_division=1.0))
+                #print(classification_report(
+                    #y_test, y_pred,
+                    #labels=unique_test_classes,
+                    #target_names=target_names,
+                    #zero_division=1.0
+               # ))
+            #else:
+                #print(classification_report(y_test, y_pred_list, zero_division=1.0))
         else:
 
             f1 = f1_score(y_test, y_pred, average='binary', zero_division=1.0)
             precision, recall, _, _ = precision_recall_fscore_support(
                 y_test, y_pred, average='binary', zero_division=1.0
             )
-            print(f'Precision: {precision}')
-            print(f'Recall: {recall}')
-            print(f'F1: {f1}')
-            print(classification_report(y_test, y_pred, zero_division=1.0))
+            #print(f'Precision: {precision}')
+            #print(f'Recall: {recall}')
+           # print(f'F1: {f1}')
+            #print(classification_report(y_test, y_pred, zero_division=1.0))
 
-        print(f'Accuracy: {self.accuracy}')
+        #print(f'Accuracy: {self.accuracy}')
 
         cf = confusion_matrix(y_test, y_pred)
         if not self.config.multiclass:
