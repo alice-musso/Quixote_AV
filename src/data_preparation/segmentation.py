@@ -16,7 +16,6 @@ class Segmentation:
     tokens_per_fragment: int = 500
     min_tokens: int = 8
     keep_full: bool = True
-    groups: List[str] = None
     
     def __post_init__(self):
         """Validate initialization parameters."""
@@ -25,28 +24,16 @@ class Segmentation:
                 f'Unknown policy, valid ones are {self.VALID_POLICIES}'
             )
     
-    def fit(self, X: List[str], y: List[str]) -> 'Segmentation':
-        """Fit method to maintain scikit-learn API compatibility."""
-        return self
-    
-    def transform(
-        self, 
-        documents: List[str], 
-        authors: List[str], 
-        filenames: List[str], 
-        label_encode: bool = False
-    ) -> Tuple[List[str], List[str]]:
+    def transform(self, processed_doc):
         """Transform documents into segments according to the specified policy."""
         
         # Initialize fragments and authors lists
-        fragments = copy(documents) if self.keep_full else []
-        authors_fragments = copy(authors) if self.keep_full else []
-        groups = filenames if self.keep_full else []
+        fragments = copy(processed_doc) if self.keep_full else []
         
         # Process each document
-        for i, (text, group) in tqdm(
-            enumerate(zip(documents, groups)), 
-            total=len(documents),
+        for text in tqdm(
+            enumerate(processed_doc),
+            total=len(processed_doc),
             desc='Generating fragments'
         ):
             # Split text according to policy
@@ -61,27 +48,10 @@ class Segmentation:
                 text_fragments, 
                 self.tokens_per_fragment
             )
-            
-            # Extend results
+
             fragments.extend(text_fragments)
-            groups.extend([group] * len(text_fragments))
-            
-            if authors is not None:
-                authors_fragments.extend([authors[i]] * len(text_fragments))
-        
-        self.groups = self._add_indices(groups)
-        return fragments, authors_fragments
-    
-    def fit_transform(
-        self, 
-        documents: List[str], 
-        authors: List[str], 
-        filenames: List[str]
-    ) -> Tuple[List[str], List[str]]:
-        """Combined fit and transform operations."""
-        return self.fit(documents, authors).transform(
-            documents, authors, filenames=filenames
-        )
+
+        return fragments
     
     def _split_by_endline(self, text: str) -> List[str]:
         """Split text by newlines and remove empty lines."""
@@ -137,18 +107,6 @@ class Segmentation:
             new_fragments.append(current_batch.strip())
             
         return new_fragments
-    
-    @staticmethod    
-    def _add_indices(filenames: List[str]) -> List[str]:
-        """Add indices to filenames to make them unique."""
-        count = {}
-        indexed_groups = []
-        
-        for name in filenames:
-            count[name] = count.get(name, -1) + 1
-            indexed_groups.append(f"{name}_{count[name]}")
-            
-        return indexed_groups
     
 # helper function
 def tokenize(text):

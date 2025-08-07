@@ -13,6 +13,9 @@ from collections import Counter
 # ------------------------------------------------------------------------
 import nltk
 from nltk.corpus import stopwords
+
+from src.data_preparation.segmentation import Segmentation
+
 nltk.download('stopwords')
 
 def get_spanish_function_words():
@@ -37,12 +40,14 @@ class Book:
         author, title = path.stem.split('-')
         raw_text = path.read_text(encoding='utf8', errors='ignore')
         clean_text = self._clean_text(raw_text)
+        fragments = self.get_fragments(clean_text)
 
         self.path = path
         self.title = title.strip()
         self.author = author.strip()
         self.raw_text = raw_text
         self.clean_text = clean_text
+        self.fragments = fragments
 
     def _clean_text(self, text):
         """Clean and normalize text content."""
@@ -53,6 +58,7 @@ class Book:
         text = re.sub(r'<\w>(.*?)</\w>', r'\1', text)
         text = text.replace('\x00', '')
         return text.strip()
+
 
     def __repr__(self):
         return f'({self.author}) "{self.title}"'
