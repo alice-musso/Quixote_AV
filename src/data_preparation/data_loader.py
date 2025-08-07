@@ -40,14 +40,14 @@ class Book:
         author, title = path.stem.split('-')
         raw_text = path.read_text(encoding='utf8', errors='ignore')
         clean_text = self._clean_text(raw_text)
-        fragments = self.get_fragments(clean_text)
 
         self.path = path
         self.title = title.strip()
         self.author = author.strip()
         self.raw_text = raw_text
         self.clean_text = clean_text
-        self.fragments = fragments
+        self.processed = None
+        self.fragments = None
 
     def _clean_text(self, text):
         """Clean and normalize text content."""
@@ -115,20 +115,21 @@ def load_corpus(path: str, spacy_language_model: 'SpaCy'):
     """
 
     processor = DocumentProcessor(language_model=spacy_language_model)
+    segmentator = Segmentation()
 
     corpus = []
     for file in tqdm(Path(path).glob('*.txt'), desc=f'Loading corpus from {path}'):
         book = Book(file)
         book.processed = processor.process_document(book.clean_text, Path(book.path).name)
+        book.segmented = segmentator.transform(book.processed.text)
         corpus.append(book)
 
     authors = set([book.author for book in corpus])
 
     print(f'Total documents: {len(corpus)}')
     print(f'Total authors: {len(authors)}')
-    
-    return corpus
 
+    return corpus
 
 def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
     for book in corpus:

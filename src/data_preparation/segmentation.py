@@ -24,34 +24,23 @@ class Segmentation:
                 f'Unknown policy, valid ones are {self.VALID_POLICIES}'
             )
     
-    def transform(self, processed_doc):
+    def transform(self, text):
         """Transform documents into segments according to the specified policy."""
         
-        # Initialize fragments and authors lists
-        fragments = copy(processed_doc) if self.keep_full else []
-        
-        # Process each document
-        for text in tqdm(
-            enumerate(processed_doc),
-            total=len(processed_doc),
-            desc='Generating fragments'
-        ):
-            # Split text according to policy
-            text_fragments = (
-                self._split_by_endline(text) 
-                if self.split_policy == 'by_endline'
-                else self._split_by_sentences(text)
-            )
-            
-            # Create windows of fragments
-            text_fragments = self._create_windows(
-                text_fragments, 
-                self.tokens_per_fragment
-            )
 
-            fragments.extend(text_fragments)
+        text_fragments = (
+            self._split_by_endline(text)
+            if self.split_policy == 'by_endline'
+            else self._split_by_sentences(text)
+        )
 
-        return fragments
+        # Create windows of fragments
+        text_fragments = self._create_windows(
+            text_fragments,
+            self.tokens_per_fragment
+        )
+
+        return text_fragments
     
     def _split_by_endline(self, text: str) -> List[str]:
         """Split text by newlines and remove empty lines."""
