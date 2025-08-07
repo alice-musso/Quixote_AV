@@ -25,56 +25,7 @@ from oversampling.dro import DistributionalRandomOversampling
 # from dro import DistributionalRandomOversampling
 
 
-class DocumentProcessor:
-    def __init__(self, language_model=None, savecache='.cache/processed_docs_def.pkl'):
-        self.nlp = language_model
-        self.savecache = savecache
-        self.init_cache()
 
-    def init_cache(self):
-        if self.savecache is None or not os.path.exists(self.savecache):
-            print('Cache not found, initializing from scratch')
-            self.cache = {}
-        else:
-            print(f'Loading cache from {self.savecache}')
-            self.cache = pickle.load(open(self.savecache, 'rb'))
-
-    def save_cache(self):
-        # return
-        # the following code is not working with current pickle, nor dill implementations, due to some problem with
-        # the serialization of the spaCy datastructures...
-
-        if self.savecache is not None:
-            print(f'Storing cache in {self.savecache}')
-            parent = Path(self.savecache).parent
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-
-    def _as_namespace(self, spacy_doc):
-        doc = SimpleNamespace(
-            text=spacy_doc.text,
-            sents=[
-                [SimpleNamespace(pos_=token.pos_) for token in sent] for sent in spacy_doc.sents
-            ],
-            words=[str(token) for token in spacy_doc]
-        )
-        return doc
-            
-    def process_documents(self, documents, filenames):
-        processed_docs = {}
-        for filename, doc in tqdm(zip(filenames, documents), total=len(filenames), desc='processing with spacy'):
-            if filename in self.cache:
-                print('document already in cache')
-                processed_docs[filename[:-2]] = self.cache[filename]
-            else:
-                print(f'{filename} not in cache')
-                processed_doc = self.nlp(doc)
-                # processed_doc = self._as_namespace(processed_doc)
-                self.cache[filename] = processed_doc
-                processed_docs[filename[:-2]] = self.cache[filename]
-                self.save_cache()
-        return processed_docs 
     
 
 class FeaturesDistortedView:

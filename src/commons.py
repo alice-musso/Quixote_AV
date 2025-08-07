@@ -24,10 +24,9 @@ from tqdm import tqdm
 import nltk
 nltk.download('punkt_tab')
 from nltk import sent_tokenize
-from data_preparation.data_loader import load_corpus, get_spanish_function_words
+from data_preparation.data_loader import load_corpus, get_spanish_function_words, Book
 from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
-    DocumentProcessor,
     FeaturesFunctionWords,
     FeaturesDistortedView,
     FeaturesMendenhall,
@@ -46,179 +45,55 @@ from model_serialization.serialization import Labels
 import warnings
 warnings.filterwarnings("ignore")
 
-AVELLANEDA_DOCUMENTS = [
+QUIXOTE_DOCUMENTS = [
     'Avellaneda - Quijote apocrifo',
     'Avellaneda - Quijote apocrifo nucleo',
     'Avellaneda - Quijote apocrifo prologo',
     'Avellaneda - Quijote apocrifo prima novelle',
-    'Avellaneda - Quijote apocrifo seconda novelle'
+    'Avellaneda - Quijote apocrifo seconda novelle',
+    'Cervantes - Don Quijote I',
+    'Cervantes - Don Quijote II'
 ]
 
-@dataclass
-class ModelConfig:
-    """Configuration for the model training and evaluation"""
-    n_jobs: int = 30
-    segment_min_token_size: int = 500
-    random_state: int = 0
-    k_ratio: float = 1.0
-    oversample: bool = False
-    rebalance_ratio: float = 0.2
-    save_res: bool = True
-    test_genre: bool = False
-    multiclass: bool = False
-    results_filename: str = 'results.csv'
-    results_path: str = './results'
-    authors_dir: str = './authorslabel'
+# ----------------------------------------------
+# Data loader
+# ----------------------------------------------
+def load_dataset(test_documents: str, path: str = 'src/data/corpus', keep_quixote=False) -> Tuple[List[str], List[str], List[str]]:
+    print('Loading data...')
+    print(f'Looking for files in: {path}')
+
+    corpus_path = Path(path)
+    assert corpus_path.exists(), f'ERROR: Path {path} does not exist!'
+    all_files = list(corpus_path.glob('*.txt'))
+    print(f'All .txt files found: {[f.name for f in all_files]}')
+
+    # print(f'Calling load_corpus with remove_test={False if test_document == "Avellaneda - Quijote apocrifo" else True}')
+
+    documents, authors, filenames = load_corpus(
+        path=path,
+        # remove_test= False if test_document == ["Avellaneda - Quijote apocrifo"] else True,
+        remove_unique_authors=False,
+        remove_quixote=not keep_quixote,
+        remove_avellaneda=True,
+        test_documents=test_documents
+    )
+    print(f'After load_corpus, filenames: {filenames}')
+    print('Data loaded.')
+    return documents, authors, filenames
 
 
 
-    @classmethod
-    def from_args(cls):
-        """Create config from command line args"""
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--test-document', default=AVELLANEDA_DOCUMENTS,
-                            help='Test document (empty=full LOO, author=author LOO, doc=specific doc, '
-                             'list of docs to test more than one)')
-        parser.add_argument('--target', default='Cervantes',
-                        help='Target author')
-        parser.add_argument('--multiclass', action='store_true',
-                            help='Use multiclass classification instead of binary')
-        parser.add_argument('--save-res', action='store_true',
-                        help='Save results to file')
-        parser.add_argument('--results-filename', default='results.csv',
-                    help='Filename for saving results')
-        parser.add_argument('--results-path', 
-                    default='./results',
-                    help='Directory path for saving results')
-        parser.add_argument('--keep_quixote', action='store_true',
-                            help='Keeps both parts of Quixote')
-        parser.add_argument('--save-model', action='store_true',
-                            help='Save trained models to disk')
-        parser.add_argument('--load-model', type=str, default=None,
-                            help='Path to load a pre-trained model from')
-        parser.add_argument('--models-dir', type=str, default='./saved_models',
-                            help='Directory to save/load models')
-        parser.add_argument('--model-name', type=str, default=None,
-                            help='Custom name for saved model (auto-generated if not provided)')
-        parser.add_argument('--authors-dir', type=str, default='./authorslabel',
-                            help='Directory for author label mappings')
 
-        args = parser.parse_args()
-
-        if '--target' in sys.argv and '--test-document' not in sys.argv:
-            args.test_document = ''
-            
-        config = cls()
-        config.results_filename = args.results_filename
-        config.results_path = args.results_path
-        config.save_res = args.save_res
-        config.multiclass = args.multiclass
-        config.authors_dir = args.authors_dir
-        config.save_model = args.save_model
-        config.load_model = args.load_model
-        config.models_dir = args.models_dir
-        config.model_name = args.model_name
-        config.args = args
-
-        if args.test_document == "":
-            config.experiment = 'loo'
-        elif isinstance(args.test_document, str):
-            config.experiment = 'single-test'
-        elif isinstance(args.test_document, list):
-            config.experiment = 'multiple-test'
-        else:
-            raise ValueError(f'args.test_document not undestood')
-
-        
-        return config, args.target, args.test_document
-            
-
+# ----------------------------------------------
+# Model
+# ----------------------------------------------
 class AuthorshipVerification:
     """Main class for authorship verification system"""
     
-    def __init__(self, config: ModelConfig, nlp: spacy.Language):
+    def __init__(self, config: 'ModelConfig', nlp: spacy.Language):
         self.config = config
         self.nlp = nlp
-        self.accuracy = 0
-        self.posterior_proba = 0
 
-        self.labels_manager = Labels(authors_dir=config.authors_dir)
-        self.author_to_id = {}
-        self.id_to_author = {}
-
-        self.model_serializer = Serialization(models_dir=config.models_dir)
-        
-    def load_dataset(self, test_documents: str, path: str = 'src/data/corpus') -> Tuple[List[str], List[str], List[str]]:
-        
-        print('Loading data...')
-        print(f'Looking for files in: {path}')
-
-        corpus_path = Path(path)
-        assert corpus_path.exists(), f'ERROR: Path {path} does not exist!'
-        all_files = list(corpus_path.glob('*.txt'))
-        print(f'All .txt files found: {[f.name for f in all_files]}')
-
-        # print(f'Calling load_corpus with remove_test={False if test_document == "Avellaneda - Quijote apocrifo" else True}')
-
-        documents, authors, filenames = load_corpus(
-            path=path, 
-            # remove_test= False if test_document == ["Avellaneda - Quijote apocrifo"] else True,
-            remove_unique_authors=False,
-            remove_quixote = not self.config.args.keep_quixote,
-            remove_avellaneda = True,
-            test_documents=test_documents
-        )
-        print(f'After load_corpus, filenames: {filenames}')
-        print('Data loaded.')
-        return documents, authors, filenames
-
-    def create_labels(self, authors: List[str], target: str, test_genre: bool = False,
-                      genres: List[str] = None) -> List[int]:
-
-        if test_genre:
-            return [1 if genre.rstrip() == 'Trattato' else 0 for genre in genres]
-
-        if self.config.multiclass:
-
-            author_to_id_path = Path(self.config.authors_dir) / "author_to_id.json"
-            #id_to_author_path = Path(self.config.authors_dir) / "id_to_author.json"
-
-            mappings_loaded = False
-
-            if author_to_id_path.exists():
-                try:
-                    print("Loading existing author mappings...")
-                    self.author_to_id = self.labels_manager.load_author_to_id(str(author_to_id_path))
-                    #self.id_to_author = self.labels_manager.load_id_to_author(str(id_to_author_path))
-
-                    mappings_loaded = True
-                    print(f"Loaded existing mappings for {len(self.author_to_id)} authors")
-                    print(f"Author mapping: {self.author_to_id}")
-
-                except Exception as e:
-                    print(f"Error loading existing mappings: {e}")
-                    print("Creating new mappings...")
-                    mappings_loaded = False
-
-            if not mappings_loaded:
-                print("Creating new author mappings...")
-                unique_authors = sorted(list(set(author.rstrip() for author in authors)))
-
-                self.labels_manager.save_author_to_id(unique_authors)
-                self.author_to_id = self.labels_manager.author_to_id
-
-                #self.labels_manager.save_id_to_author(self.author_to_id)
-                #self.id_to_author = self.labels_manager.id_to_author
-                #self.id_to_author = {int(k): v for k, v in self.labels_manager.id_to_author.items()}
-
-                print(f"Created new mappings for {len(unique_authors)} authors")
-                print(f"Author mapping: {self.author_to_id}")
-
-            self.id_to_author = {i: author for author, i in self.author_to_id.items()}
-            return [self.author_to_id[author.rstrip()] for author in authors]
-
-        else:
-            return [1 if author.rstrip() == target else 0 for author in authors]
 
     def loo_multiple_test_split(self, test_index: int, test_indexes, X: List[str], y: List[int], doc: str, ylabel: int,
                                 filenames: List[str]) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
@@ -347,7 +222,7 @@ class AuthorshipVerification:
                              X: List[str], groups: List[str], dataset: str = ''
                              ) -> List[Union[spacy.tokens.Doc, spacy.tokens.Span]]:
         """Extract processed segments from documents"""
-        print(f'Extracting processed {dataset} segments...')
+        # print(f'Extracting processed {dataset} segments...')
         
         none_count = 0
         processed_X = []
@@ -374,7 +249,7 @@ class AuthorshipVerification:
                               y_dev: List[int], y_test: List[int], 
                               groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
         
-        print('Extracting feature vectors...')
+        # print('Extracting feature vectors...')
 
         spanish_function_words = get_spanish_function_words()
         vectorizers = [
@@ -398,16 +273,16 @@ class AuthorshipVerification:
         orig_groups_dev = groups_dev.copy()
 
         for vectorizer in vectorizers:
-            print(f'\nExtracting {vectorizer}')
+            # print(f'\nExtracting {vectorizer}')
             reductor = FeatureSetReductor(
                 vectorizer, 
                 k_ratio=self.config.k_ratio
             )
 
-            print('\nProcessing development set')
+            # print('\nProcessing development set')
             features_set_dev = reductor.fit_transform(processed_docs_dev, y_dev)
 
-            print('\nProcessing test set')
+            # print('\nProcessing test set')
             features_set_test = reductor.transform(processed_docs_test)
 
             if self.config.oversample:
@@ -439,20 +314,20 @@ class AuthorshipVerification:
             feature_sets_dev
         )
 
-        print(f'Feature sets computed: {len(feature_sets_dev)}')
-        print('\nStacking feature vectors')
+        # print(f'Feature sets computed: {len(feature_sets_dev)}')
+        # print('\nStacking feature vectors')
 
         if feature_sets_dev_orig:
             X_dev_stacked_orig = hstacker._hstack(feature_sets_dev_orig)
             X_test_stacked_orig = hstacker._hstack(feature_sets_test_orig)
-            print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
-            print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
+            # print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
+            # print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
 
         X_dev_stacked = hstacker._hstack(feature_sets_dev)
         X_test_stacked = hstacker._hstack(feature_sets_test)
 
-        print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
-        print(f'X_test_stacked shape: {X_test_stacked.shape}')
+        # print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
+        # print(f'X_test_stacked shape: {X_test_stacked.shape}')
 
         y_dev_final = y_dev_oversampled if self.config.oversample else y_dev
         y_test_final = y_test_oversampled if self.config.oversample else y_test
@@ -535,45 +410,12 @@ class AuthorshipVerification:
             
             return h1
 
-    def save_trained_model(self, model: BaseEstimator, target_author: str,
-                          test_document: str) -> str:
-        """Save the trained model and complete system"""
-
-        if not self.config.save_model:
-            return
-
-        if self.config.model_name:
-            model_name = self.config.model_name
-        else:
-            classification_type = "multiclass" if self.config.multiclass else "binary"
-            model_name = f"{classification_type}"
-
-        try:
-            model_path = self.model_serializer.save_model(model, f"model_{model_name}")
-            print(f"Model saved to: {model_path}")
-
-        except Exception as e:
-            print(f"Error saving model: {e}")
-
-        filepath = self.model_serializer.save_model( model=model )
-        return filepath
-
-    def load_pretrained_model(self, filepath: str) -> Optional[BaseEstimator]:
-        """Load a pre-trained model"""
-        try:
-            model = self.model_serializer.load_model(filepath)
-            print(f"Model loaded successfully")
-            return model
-        except Exception as e:
-            print(f"Error loading model from {filepath}: {e}")
-            return None
 
     def evaluate_model(self, clf: BaseEstimator, X_test: np.ndarray, 
                     y_test: List[int], return_proba: bool = True
                     ) -> Tuple[float, float, np.ndarray, float, Optional[str]]:
         
-        print('Evaluating performance...',
-            '(on fragmented text)' if len(y_test) > 110 else '\n')
+        # print('Evaluating performance...(on fragmented text)' if len(y_test) > 110 else '\n')
         
         y_test = np.array(y_test * X_test.shape[0])
         y_pred = clf.predict(X_test)
@@ -642,7 +484,7 @@ class AuthorshipVerification:
         else:
             print(f'\nConfusion matrix:\n{cf}\n')
 
-        print(f"Random seed: {self.config.random_state}")
+        # print(f"Random seed: {self.config.random_state}")
         
         return self.accuracy, f1, cf, self.posterior_proba, predicted_author
 
@@ -656,14 +498,9 @@ class AuthorshipVerification:
 
 
         if self.config.multiclass:
-            if self.config.load_model and len(y_test):
-                unique_test_classes = sorted(set(y_test))
-                target_names = [self.id_to_author.get[i] for i in unique_test_classes
-                                if i in self.id_to_author.get]
-            else:
-                unique_test_classes = sorted(set(y_test))
-                target_names = [self.id_to_author[i] for i in unique_test_classes
-                                if i in self.id_to_author]
+            unique_test_classes = sorted(set(y_test))
+            target_names = [self.id_to_author[i] for i in unique_test_classes
+                            if i in self.id_to_author]
 
             target_info = str(target_names).replace('[', '').replace(']', '').replace("'", '')
 
@@ -697,8 +534,61 @@ class AuthorshipVerification:
         
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
-    def run(self, target: str, test_documents: str, multiclass: bool = True, save_results: bool = True,
-            test_genre: bool = False, corpus_path='../corpus'):
+
+    def fit(self, corpus: List[Book]):
+
+        processed_documents = self.get_processed_documents(documents, filenames)
+
+        # replace the plain text documents with clean processed strings after spaCy
+        documents = [processed_documents[filename[:-2]].text for filename in filenames]
+
+        y = self.create_labels(authors, target, self.config.test_genre, genres)
+
+        print(f'Label distribution: {np.unique(y, return_counts=True)}')
+
+        if test_documents:
+            test_indices = []
+            for test_document in test_documents:
+                test_document_normalized = test_document.strip()
+                for test_idx, filename in enumerate(filenames):
+                    filename_normalized = filename.strip()
+                    if test_document_normalized in filename_normalized:
+                        test_indices.append(test_idx)
+
+                # print(f'Testing on: {test_documents}')
+                # print(f'Found test indices: {test_indices}')
+                if not test_indices:
+                    print(f'ERROR: Test document "{test_documents}" not found in available filenames')
+                    print(f'Available filenames: {filenames}')
+                    return
+        else:
+            test_indices = list(range(len(documents)))
+            if self.config.multiclass:
+                print(f'Full LOO evaluation: testing on all {len(test_indices)} documents (multiclass)')
+            else:
+                print(
+                    f'Full LOO evaluation: testing on all {len(test_indices)} documents (binary classification for {target})')
+
+        print(f'Total documents to test: {len(test_indices)}')
+
+        for test_idx in test_indices:
+            print(f'\n=== Processing document {test_idx + 1}/{len(test_indices)} ===')
+            self.train_and_test_single_document(
+                test_idx, test_indices, documents, y, processed_documents, filenames, target,
+                self.config.save_results, self.config.results_filename,
+                self.config.results_path,
+                experiment_type=self.config.experiment
+            )
+
+        total_time = round((time.time() - start_time) / 60, 2)
+        if self.config.multiclass:
+            print(f'Total time spent for multiclass model building: {total_time} minutes.')
+        else:
+            print(f'Total time spent for model building for author {target}: {total_time} minutes.')
+
+
+    def run(self, test_documents: str):
+
         """Run the complete authorship verification process"""
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')
@@ -713,7 +603,7 @@ class AuthorshipVerification:
 
         authors: list[str]
 
-        documents, authors, filenames = self.load_dataset(test_documents, path=corpus_path)
+        # documents, authors, filenames = load_dataset(test_documents, path=corpus_path, keep_quixote=self.config.args.keep_quixote)
         filenames = [f'{filename}_0' for filename in filenames]
         test_documents = [f'{filename}_0' for filename in test_documents]
 
@@ -730,7 +620,7 @@ class AuthorshipVerification:
         documents = [processed_documents[filename[:-2]].text for filename in filenames]
 
 
-        y = self.create_labels(authors, target, test_genre, genres)
+        y = self.create_labels(authors, target, self.config.test_genre, genres)
 
         print(f'Label distribution: {np.unique(y, return_counts=True)}')
 
@@ -764,7 +654,7 @@ class AuthorshipVerification:
             print(f'\n=== Processing document {test_idx + 1}/{len(test_indices)} ===')
             self.train_and_test_single_document(
                 test_idx, test_indices, documents, y, processed_documents, filenames, target,
-                save_results, self.config.results_filename,
+                self.config.save_results, self.config.results_filename,
                 self.config.results_path,
                 experiment_type=self.config.experiment
             )
@@ -810,10 +700,6 @@ class AuthorshipVerification:
         X_test_processed = self.get_processed_segments(
             processed_documents, X_test, groups_test, dataset='test'
         )
-        # X_test_frag_processed = self.get_processed_segments(
-        #     processed_documents, X_test_frag, groups_test_frag,
-        #     dataset='test fragments'
-        # )
 
         X_len = len(X_dev_processed)
         print(f'X_len: {X_len}')
@@ -852,7 +738,7 @@ class AuthorshipVerification:
         )
 
         doc_name = groups_test[0][:-2] if groups_test else f"doc_{test_idx}"
-        self.save_trained_model(clf, target, doc_name)
+        # self.save_trained_model(clf, target, doc_name)
 
         if save_results:
             self.save_results(
@@ -863,19 +749,3 @@ class AuthorshipVerification:
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(f'Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes.')
 
-def main():
-    
-    config, target, test_document = ModelConfig.from_args()
-    nlp = spacy.load('es_dep_news_trf')
-
-    av_system = AuthorshipVerification(config, nlp)
-    av_system.run(
-        target=target,
-        test_documents=test_document,
-        multiclass=config.multiclass,
-        save_results=config.save_res,
-        test_genre=config.test_genre
-    )
-
-if __name__ == '__main__':
-    main()
