@@ -128,7 +128,6 @@ def load_corpus(path: str, spacy_language_model: 'SpaCy'):
 
     print(f'Total documents: {len(corpus)}')
     print(f'Total authors: {len(authors)}')
-
     return corpus
 
 def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
@@ -143,15 +142,7 @@ def remove_unique_authors(corpus: List[Book]):
     return [book for book in corpus if counts[book.author]>1]
 
 
-def _remove_single_author_texts(corpus: list[dict]) -> list[dict]:
+#def _remove_single_author_texts(corpus: list[dict]) -> list[dict]:
     """Remove texts by authors who only have one work."""
     author_counts = Counter(doc['author'] for doc in corpus)
     return [doc for doc in corpus if author_counts[doc['author']] > 1]
-
-
-
-
-
-
-
-

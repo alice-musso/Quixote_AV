@@ -7,7 +7,7 @@ from pathlib import Path
 import spacy
 
 
-from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS, load_dataset
+import models
 from data_preparation.data_loader import load_corpus, binarize_corpus
 
 warnings.filterwarnings("ignore")
@@ -70,7 +70,7 @@ def main():
         train_corpus = binarize_corpus(train_corpus, positive_author=config.positive_author)
         test_corpus = binarize_corpus(test_corpus, positive_author=config.positive_author)
 
-    av_system = AuthorshipVerification(config)
+    av_system = models.AuthorshipVerification(config)
     av_system.fit(train_corpus)
     av_system.predict(test_corpus)
 

@@ -24,7 +24,7 @@ from tqdm import tqdm
 import nltk
 nltk.download('punkt_tab')
 from nltk import sent_tokenize
-from data_preparation.data_loader import load_corpus, get_spanish_function_words, Book
+from data_preparation.data_loader import load_corpus, get_spanish_function_words, Book, DocumentProcessor
 from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
     FeaturesFunctionWords,
@@ -81,6 +81,108 @@ def load_dataset(test_documents: str, path: str = 'src/data/corpus', keep_quixot
     return documents, authors, filenames
 
 # ----------------------------------------------
+# Process documents
+# ----------------------------------------------
+
+def get_processed_documents(self, documents: List[str], filenames: List[str],
+                                processed: bool = False,
+                                cache_file: str = '.cache/processed_docs.pkl') -> Dict[str, spacy.tokens.Doc]:
+        """Process documents using spaCy"""
+        print('Processing documents...')
+
+        if not processed:
+            self.nlp.max_length = max(len(doc) for doc in documents)
+            processor = DocumentProcessor(language_model=self.nlp, savecache=cache_file)
+            processed_docs = processor.process_documents(documents, filenames)
+        else:
+            processor = DocumentProcessor(savecache=cache_file)
+            processed_docs = processor.process_documents(documents, filenames)
+
+        return processed_docs
+
+# ----------------------------------------------
+# Create segments
+# ----------------------------------------------
+
+class create_segments:
+    """Class for loading/creating segments for training"""
+
+    def __init__(self, nlp: spacy.Language):
+        self.nlp = nlp
+
+    def segment_data(self, documents: List[str], authors: List[str]
+                     , filenames: List[str],
+                     ) -> Tuple[List[str], List[str], List[str], List[str], List[str], List[str]]:
+
+        """Segment the documents into smaller chunks"""
+
+        print('Segmenting data...')
+        whole_docs_len = len(authors)
+
+        segmentator = Segmentation(
+            split_policy='by_sentence',
+            tokens_per_fragment=self.config.segment_min_token_size
+        )
+
+        splitted_docs = segmentator.fit_transform(
+            documents,
+            authors,
+            filenames
+        )
+
+        documents_frag = splitted_docs[0][:whole_docs_len]
+        authors_frag= splitted_docs[1][:whole_docs_len]
+        filenames_frag = filenames[:whole_docs_len]
+
+        print('Segmentation complete.')
+
+        return (documents, authors, filenames, documents_frag, authors_frag, filenames_frag)
+
+    def find_segment(self, segment: str, processed_document: spacy.tokens.Doc) -> spacy.tokens.Span:
+        """Find a segment within a processed document"""
+        segment = sent_tokenize(segment)[0]
+        start_segment = segment  # segment.replace('\n',' ').replace('  ', ' ').replace('\t', ' ')
+        start_idx = processed_document.text.find(start_segment)
+        end_idx = start_idx + len(segment)
+
+        if start_idx == -1:
+            print('mismatch found:::')
+            print('SEGMENT:', start_segment)
+            print('PROCESSED:', processed_document.text)
+
+        processed_seg = processed_document.char_span(start_idx, end_idx, alignment_mode='expand')
+        if not processed_seg:
+            processed_seg = processed_document.char_span(start_idx, end_idx - 1, alignment_mode='expand')
+
+        return processed_seg
+
+    def get_processed_segments(self, processed_docs: Dict[str, spacy.tokens.Doc],
+                               X: List[str], groups: List[str], dataset: str = ''
+                               ) -> List[Union[spacy.tokens.Doc, spacy.tokens.Span]]:
+        """Extract processed segments from documents"""
+        # print(f'Extracting processed {dataset} segments...')
+
+        none_count = 0
+        processed_X = []
+
+        for segment, group in tqdm(zip(X, groups), total=len(X), desc='Progress'):
+            if group.endswith('_0_0'):  # entire doc
+                processed_doc = processed_docs[group[:-4]]
+                processed_X.append(processed_doc)
+            else:  # segment
+                group_idx = group.find('_0')
+                group_key = group[:group_idx]
+                ent_doc_processed = processed_docs[group_key]
+                processed_segment = self.find_segment(segment, ent_doc_processed)
+
+                if not processed_segment:
+                    none_count += 1
+                processed_X.append(processed_segment)
+
+        print(f'None count: {none_count}\n')
+        return processed_X
+
+# ----------------------------------------------
 # Model
 # ----------------------------------------------
 class AuthorshipVerification:
@@ -120,132 +222,12 @@ class AuthorshipVerification:
         
         return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name]
 
-    def segment_data(self, X_dev: List[str], X_test: List[str], y_dev: List[int], 
-                    y_test: List[int], groups_dev: List[str], groups_test: List[str]
-                    ) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str], List[str]]:
-        """Segment the documents into smaller chunks"""
-        
-        print('Segmenting data...')
-        whole_docs_len = len(y_test)
-
-        #print(f"DEBUG: whole_docs_len = {whole_docs_len}")
-        #print(f"DEBUG: Original X_test length = {len(X_test)}")
-        #print(f"DEBUG: Original X_test[0] length = {len(X_test[0])} characters")
-        X_test_original = X_test[0]
-
-        segmentator_dev = Segmentation(
-            split_policy='by_sentence',
-            tokens_per_fragment=self.config.segment_min_token_size
-        )
-        splitted_docs_dev = segmentator_dev.fit_transform(
-            documents=X_dev,
-            authors=y_dev,
-            filenames=groups_dev
-        )
-
-        segmentator_test = Segmentation(
-            split_policy='by_sentence',
-            tokens_per_fragment=self.config.segment_min_token_size
-        )
-        splitted_docs_test = segmentator_test.transform(
-            documents=X_test,
-            authors=y_test,
-            filenames=groups_test
-        )
-        groups_test = segmentator_test.groups
-
-       # print(f"DEBUG: After segmentation, splitted_docs_test[0] has {len(splitted_docs_test[0])} fragments")
-        #print(f"DEBUG: Fragment lengths: {[len(frag) for frag in splitted_docs_test[0]]}")
-
-        X_dev = splitted_docs_dev[0]
-        y_dev = splitted_docs_dev[1]
-        groups_dev = segmentator_dev.groups
-
-        X_test = splitted_docs_test[0][:whole_docs_len]
-        y_test = splitted_docs_test[1][:whole_docs_len]
-        groups_test_entire_docs = groups_test[:whole_docs_len]
-
-       # print(f"DEBUG: X_test after slicing has {len(X_test)} items")
-       # print(f"DEBUG: X_test[0] length = {len(X_test[0])} characters")
-
-        X_test_frag = splitted_docs_test[0][whole_docs_len:]
-        y_test_frag = splitted_docs_test[1][whole_docs_len:]
-        groups_test_frag = groups_test[whole_docs_len:]
-
-        #print(f"DEBUG: X_test_frag has {len(X_test_frag)} fragments")
-       # print(f"DEBUG: Are X_test[0] and original X_test[0] the same? {X_test[0] == X_test_original}")
-
-        print('Segmentation complete.')
-        
-        return (X_dev, X_test, y_dev, y_test, X_test_frag, y_test_frag, 
-                groups_dev, groups_test_entire_docs, groups_test_frag)
-
-    def get_processed_documents(self, documents: List[str], filenames: List[str], 
-                              processed: bool = False, 
-                              cache_file: str = '.cache/processed_docs.pkl') -> Dict[str, spacy.tokens.Doc]:
-        """Process documents using spaCy"""
-        print('Processing documents...')
-        
-        if not processed:
-            self.nlp.max_length = max(len(doc) for doc in documents)
-            processor = DocumentProcessor(language_model=self.nlp, savecache=cache_file)
-            processed_docs = processor.process_documents(documents, filenames)
-        else:
-            processor = DocumentProcessor(savecache=cache_file)
-            processed_docs = processor.process_documents(documents, filenames)
-        
-        return processed_docs
-
-    def find_segment(self, segment: str, processed_document: spacy.tokens.Doc) -> spacy.tokens.Span:
-        """Find a segment within a processed document"""
-        segment = sent_tokenize(segment)[0]
-        start_segment = segment # segment.replace('\n',' ').replace('  ', ' ').replace('\t', ' ')
-        start_idx = processed_document.text.find(start_segment)
-        end_idx = start_idx + len(segment)
-
-        if start_idx == -1:
-            print('mismatch found:::')
-            print('SEGMENT:', start_segment)
-            print('PROCESSED:', processed_document.text)
-        
-        processed_seg = processed_document.char_span(start_idx, end_idx, alignment_mode='expand')
-        if not processed_seg:
-            processed_seg = processed_document.char_span(start_idx, end_idx-1, alignment_mode='expand')
-        
-        return processed_seg
-
-    def get_processed_segments(self, processed_docs: Dict[str, spacy.tokens.Doc], 
-                             X: List[str], groups: List[str], dataset: str = ''
-                             ) -> List[Union[spacy.tokens.Doc, spacy.tokens.Span]]:
-        """Extract processed segments from documents"""
-        # print(f'Extracting processed {dataset} segments...')
-        
-        none_count = 0
-        processed_X = []
-        
-        for segment, group in tqdm(zip(X, groups), total=len(X), desc='Progress'):
-            if group.endswith('_0_0'):  # entire doc
-                processed_doc = processed_docs[group[:-4]]
-                processed_X.append(processed_doc)
-            else:  # segment
-                group_idx = group.find('_0')
-                group_key = group[:group_idx]
-                ent_doc_processed = processed_docs[group_key]
-                processed_segment = self.find_segment(segment, ent_doc_processed)
-                
-                if not processed_segment:
-                    none_count += 1
-                processed_X.append(processed_segment)
-        
-        print(f'None count: {none_count}\n')
-        return processed_X
 
     def extract_feature_vectors(self, processed_docs_dev: List[spacy.tokens.Doc], 
                               processed_docs_test: List[spacy.tokens.Doc],
                               y_dev: List[int], y_test: List[int], 
                               groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
-        
-        # print('Extracting feature vectors...')
+
 
         spanish_function_words = get_spanish_function_words()
         vectorizers = [
@@ -269,16 +251,13 @@ class AuthorshipVerification:
         orig_groups_dev = groups_dev.copy()
 
         for vectorizer in vectorizers:
-            # print(f'\nExtracting {vectorizer}')
             reductor = FeatureSetReductor(
                 vectorizer, 
                 k_ratio=self.config.k_ratio
             )
 
-            # print('\nProcessing development set')
             features_set_dev = reductor.fit_transform(processed_docs_dev, y_dev)
 
-            # print('\nProcessing test set')
             features_set_test = reductor.transform(processed_docs_test)
 
             if self.config.oversample:
@@ -310,20 +289,13 @@ class AuthorshipVerification:
             feature_sets_dev
         )
 
-        # print(f'Feature sets computed: {len(feature_sets_dev)}')
-        # print('\nStacking feature vectors')
-
         if feature_sets_dev_orig:
             X_dev_stacked_orig = hstacker._hstack(feature_sets_dev_orig)
             X_test_stacked_orig = hstacker._hstack(feature_sets_test_orig)
-            # print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
-            # print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
 
         X_dev_stacked = hstacker._hstack(feature_sets_dev)
         X_test_stacked = hstacker._hstack(feature_sets_test)
 
-        # print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
-        # print(f'X_test_stacked shape: {X_test_stacked.shape}')
 
         y_dev_final = y_dev_oversampled if self.config.oversample else y_dev
         y_test_final = y_test_oversampled if self.config.oversample else y_test
@@ -605,8 +577,8 @@ class AuthorshipVerification:
 
         print(f'Available filenames: {filenames}')
 
-        genres = ['Trattato' if 'epistola' not in filename.lower()
-                else 'Epistola' for filename in filenames]
+        #genres = ['Trattato' if 'epistola' not in filename.lower()
+                #else 'Epistola' for filename in filenames]
 
         print(f'Genres: {np.unique(genres, return_counts=True)}')
 
