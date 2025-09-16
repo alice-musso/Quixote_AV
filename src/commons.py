@@ -39,6 +39,8 @@ from feature_extraction.features import (
 import warnings
 warnings.filterwarnings("ignore")
 
+import time
+
 QUIXOTE_DOCUMENTS = [
     'Avellaneda - Quijote apocrifo',
     'Avellaneda - Quijote apocrifo nucleo',
@@ -52,7 +54,7 @@ QUIXOTE_DOCUMENTS = [
 # ----------------------------------------------
 # Data loader
 # ----------------------------------------------
-def load_dataset(
+"""def load_dataset(
     test_documents: str, path: str = "src/data/corpus", keep_quixote=False
 ) -> Tuple[List[str], List[str], List[str]]:
     print("Loading data...")
@@ -76,6 +78,7 @@ def load_dataset(
     print(f"After load_corpus, filenames: {filenames}")
     print("Data loaded.")
     return documents, authors, filenames
+    """
 
 
 # ----------------------------------------------
@@ -88,7 +91,7 @@ class AuthorshipVerification:
         self.config = config
         self.nlp = nlp
 
-    def loo_multiple_test_split( self, test_index: int, test_indexes, X: List[str], y: List[int],
+    """def loo_multiple_test_split( self, test_index: int, test_indexes, X: List[str], y: List[int],
         doc: str, ylabel: int, filenames: List[str],) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
 
         doc_name = filenames[test_index]
@@ -114,11 +117,11 @@ class AuthorshipVerification:
         y_dev = list(np.delete(y, i))
         groups_dev = list(np.delete(filenames, i))
 
-        return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name]
+        return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name]"""
 
-    def find_segment(self, segment: str, processed_document: spacy.tokens.Doc
+    """def find_segment(self, segment: str, processed_document: spacy.tokens.Doc
     ) -> spacy.tokens.Span:
-        """Find a segment within a processed document"""
+        Find a segment within a processed document
         segment = sent_tokenize(segment)[0]
         start_segment = (
             segment  # segment.replace('\n',' ').replace('  ', ' ').replace('\t', ' ')
@@ -143,7 +146,7 @@ class AuthorshipVerification:
 
     def get_processed_segments( self, processed_docs: Dict[str, spacy.tokens.Doc], X: List[str], groups: List[str],
         dataset: str = "") -> List[Union[spacy.tokens.Doc, spacy.tokens.Span]]:
-        """Extract processed segments from documents"""
+        Extract processed segments from documents
         # print(f'Extracting processed {dataset} segments...')
 
         none_count = 0
@@ -164,15 +167,14 @@ class AuthorshipVerification:
                 processed_X.append(processed_segment)
 
         print(f"None count: {none_count}\n")
-        return processed_X
+        return processed_X"""
 
     def extract_feature_vectors(
-        self, processed_docs_dev: List[spacy.tokens.Doc], processed_docs_test: List[spacy.tokens.Doc], y_dev: List[int],
-        y_test: List[int], groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
-
-        # print('Extracting feature vectors...')
+        self, processed_docs_dev: List[spacy.tokens.Doc], processed_docs_test: List[spacy.tokens.Doc], y_dev: List[str],
+        y_test: List[str], groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
 
         spanish_function_words = get_spanish_function_words()
+
         vectorizers = [
             FeaturesFunctionWords(
                 function_words=spanish_function_words, ngram_range=(1, 1)
@@ -284,7 +286,7 @@ class AuthorshipVerification:
 
         return feature_sets_idxs
 
-    def train_model(self, X_dev: np.ndarray, y_dev: List[int], groups_dev: List[str],
+    def train_model(self, X_dev: np.ndarray, y_dev: List[str], groups_dev: List[str],
         model: BaseEstimator, model_name: str) -> BaseEstimator:
 
         param_grid = {"C": np.logspace(-4, 4, 9), "class_weight": ["balanced", None]}
@@ -318,7 +320,7 @@ class AuthorshipVerification:
 
         return h1
 
-    def evaluate_model(self, clf: BaseEstimator,X_test: np.ndarray, y_test: List[int],return_proba: bool = True,
+    def evaluate_model(self, clf: BaseEstimator,X_test: np.ndarray, y_test: List[str],return_proba: bool = True,
     ) -> Tuple[float, float, np.ndarray, float, Optional[str]]:
 
         # print('Evaluating performance...(on fragmented text)' if len(y_test) > 110 else '\n')
@@ -460,14 +462,12 @@ class AuthorshipVerification:
 
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
-    def fit(self, corpus: List[Book]):
+    def fit(self, test_documents: List[Book]):
 
-        processed_documents = self.get_processed_documents(documents, filenames)
-
-        # replace the plain text documents with clean processed strings after spaCy
-        documents = [processed_documents[filename[:-2]].text for filename in filenames]
-
-        y = self.create_labels(authors, target, self.config.test_genre, genres)
+        y = [book.author for book in test_documents]
+        filenames =[book.path.name for book in test_documents]
+        documents = [book.clean_text for book in test_documents]
+        processed_documents = [book.processed for book in test_documents]
 
         print(f"Label distribution: {np.unique(y, return_counts=True)}")
 
@@ -484,22 +484,32 @@ class AuthorshipVerification:
                 # print(f'Found test indices: {test_indices}')
                 if not test_indices:
                     print(
-                        f'ERROR: Test document "{test_documents}" not found in available filenames'
+                        f'ERROR: Test document "{documents}" not found in available filenames'
                     )
                     print(f"Available filenames: {filenames}")
                     return
         else:
             test_indices = list(range(len(documents)))
-            if self.config.multiclass:
+            """if self.config.multiclass:
                 print(
                     f"Full LOO evaluation: testing on all {len(test_indices)} documents (multiclass)"
                 )
             else:
                 print(
                     f"Full LOO evaluation: testing on all {len(test_indices)} documents (binary classification for {target})"
-                )
+                )"""
 
         print(f"Total documents to test: {len(test_indices)}")
+
+        #TODO: estrarre i feature vectors, passare a train_model le features, le label, groups_dev,
+        # il modello e il model name
+
+        #model = LogisticRegression(
+            #random_state=self.config.random_state,
+            #n_jobs=self.config.n_jobs,
+        #)
+        #print(f"\nBuilding classifier...\n")
+        #clf = self.train_model(X_dev, y_dev, groups_dev, model, "LogisticRegression")
 
         for test_idx in test_indices:
             print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")
@@ -527,6 +537,7 @@ class AuthorshipVerification:
                 f"Total time spent for model building for author {target}: {total_time} minutes."
             )
 
+
     def run(self, target: str, test_documents: Union[str, List[str]]):
         """Run the complete authorship verification process"""
         start_time = time.time()
@@ -543,10 +554,8 @@ class AuthorshipVerification:
         corpus = load_corpus(path=self.config.corpus_path, nlp=self.nlp)
 
         documents = [ book.clean_text for book in corpus]
-        # solo testo pulito, non processato da spacy
         processed_documents = [ book.processed for book in corpus]
-        # già processati, sono oggett Doc (da spaCy)
-        segmented = [ book.segmented for book in corpus]  # segmenti
+        segmented = [ book.segmented for book in corpus]
         authors = [book.author for book in corpus]
         filenames = [book.path.name for book in corpus]
         genres = [ "Trattato" if "epistola" not in filename.lower() else "Epistola"
@@ -592,7 +601,6 @@ class AuthorshipVerification:
 
         for test_idx in test_indices:
             print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")
-            # TODO: da modificare questo metodo
 
             self.train_and_test_single_document(
                 test_idx,
@@ -627,6 +635,7 @@ class AuthorshipVerification:
 
         doc, ylabel = documents[test_idx], y[test_idx]
 
+       #SPLIT PER LA LOO
         if experiment_type == "single-test":
             X_dev, X_test, y_dev, y_test, groups_dev, groups_test = self.loo_split(
                 test_idx, documents, y, doc, ylabel, filenames
@@ -640,8 +649,8 @@ class AuthorshipVerification:
         else:
             raise NotImplementedError("not yet implemented")
 
-        # TODO: i parametri del train_and_test_single_document vanno sistemati) inserire i documenti segmentati in "segmented"
-        #  e processati in "processed_documents"
+        # TODO: i parametri del train_and_test_single_document vanno sistemati); considerare che ci sono già i documenti
+        #  segmentati in "segmented" e processati in "processed_documents"
 
         (
             X_dev,
@@ -666,8 +675,7 @@ class AuthorshipVerification:
         X_len = len(X_dev_processed)
         print(f"X_len: {X_len}")
 
-        (
-            X_dev,
+        (X_dev,
             X_test,
             y_dev,
             y_test,

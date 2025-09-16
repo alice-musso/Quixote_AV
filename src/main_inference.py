@@ -7,7 +7,7 @@ from pathlib import Path
 import spacy
 
 
-from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS, load_dataset
+from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS
 from data_preparation.data_loader import load_corpus, binarize_corpus
 
 warnings.filterwarnings("ignore")
