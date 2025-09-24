@@ -70,7 +70,7 @@ def main():
         train_corpus = binarize_corpus(train_corpus, positive_author=config.positive_author)
         test_corpus = binarize_corpus(test_corpus, positive_author=config.positive_author)
 
-    av_system = AuthorshipVerification(config)
+    av_system = AuthorshipVerification(config, nlp = spacy_language_model)
     av_system.fit(train_corpus)
     av_system.predict(test_corpus)
 

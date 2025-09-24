@@ -170,8 +170,7 @@ class AuthorshipVerification:
         return processed_X"""
 
     def extract_feature_vectors(
-        self, processed_docs_dev: List[spacy.tokens.Doc], processed_docs_test: List[spacy.tokens.Doc], y_dev: List[str],
-        y_test: List[str], groups_dev: List[str]) -> Tuple[np.ndarray, ...]:
+        self, processed_docs: List[spacy.tokens.Doc], y: List[str], filenames: List[str]) -> Tuple[np.ndarray, ...]:
 
         spanish_function_words = get_spanish_function_words()
 
@@ -188,83 +187,69 @@ class AuthorshipVerification:
         ]
 
         hstacker = HstackFeatureSet(vectorizers)
-        feature_sets_dev = []
-        feature_sets_test = []
-        feature_sets_dev_orig = []
-        feature_sets_test_orig = []
-        orig_groups_dev = groups_dev.copy()
+        feature_sets = []
+        feature_sets_orig = []
+        orig_filenames = filenames.copy()
 
         for vectorizer in vectorizers:
             # print(f'\nExtracting {vectorizer}')
             reductor = FeatureSetReductor(vectorizer, k_ratio=self.config.k_ratio)
 
-            # print('\nProcessing development set')
-            features_set_dev = reductor.fit_transform(processed_docs_dev, y_dev)
-
-            # print('\nProcessing test set')
-            features_set_test = reductor.transform(processed_docs_test)
+            # print('\nProcessing set')
+            features_set= reductor.fit_transform(processed_docs, y)
 
             if self.config.oversample:
-                feature_sets_dev_orig.append(features_set_dev)
-                feature_sets_test_orig.append(features_set_test)
-                orig_y_dev = y_dev.copy()
+                feature_sets_orig.append(features_set)
+                orig_y = y.copy()
 
                 (
-                    features_set_dev,
-                    y_dev_oversampled,
-                    features_set_test,
-                    y_test_oversampled,
-                    groups_dev,
+                    features_set,
+                    y_oversampled,
+                    features_set,
+                    y_oversampled,
+                    groups,
                 ) = reductor.oversample_DRO(
-                    Xtr=features_set_dev,
-                    ytr=y_dev,
-                    Xte=features_set_test,
-                    yte=y_test,
-                    groups=orig_groups_dev,
+                    Xtr=features_set,
+                    ytr=y,
+                    groups=orig_filenames,
                     rebalance_ratio=self.config.rebalance_ratio,
                 )
-                feature_sets_dev.append(features_set_dev)
-                feature_sets_test.append(features_set_test)
+                feature_sets.append(features_set)
             else:
-                feature_sets_dev.append(features_set_dev)
-                feature_sets_test.append(features_set_test)
+                feature_sets.append(features_set)
 
         orig_feature_sets_idxs = self._compute_feature_set_idx(
-            vectorizers, feature_sets_dev_orig
+            vectorizers, feature_sets_orig
         )
-        feature_sets_idxs = self._compute_feature_set_idx(vectorizers, feature_sets_dev)
+        feature_sets_idxs = self._compute_feature_set_idx(vectorizers, feature_sets)
 
         # print(f'Feature sets computed: {len(feature_sets_dev)}')
         # print('\nStacking feature vectors')
 
-        if feature_sets_dev_orig:
-            X_dev_stacked_orig = hstacker._hstack(feature_sets_dev_orig)
-            X_test_stacked_orig = hstacker._hstack(feature_sets_test_orig)
+        if feature_sets_orig:
+            X_stacked_orig = hstacker._hstack(feature_sets_orig)
             # print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
             # print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
 
-        X_dev_stacked = hstacker._hstack(feature_sets_dev)
-        X_test_stacked = hstacker._hstack(feature_sets_test)
+        X_stacked = hstacker._hstack(feature_sets)
 
         # print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
         # print(f'X_test_stacked shape: {X_test_stacked.shape}')
 
-        y_dev_final = y_dev_oversampled if self.config.oversample else y_dev
-        y_test_final = y_test_oversampled if self.config.oversample else y_test
+        y_final = y_oversampled if self.config.oversample else y
 
-        print("\nFeature vectors extracted.\n")
-        print(f"Vector document final shape: {X_dev_stacked.shape}")
-        print(f"\nX_dev_stacked: {X_dev_stacked.shape[0]}")
-        print(f"y_dev: {len(y_dev_final)}")
-        print(f"groups_dev: {len(groups_dev)}")
-        print(f"groups_dev_orig: {len(orig_groups_dev)}")
+        #print("Feature vectors extracted.")
+        #print(f"Vector document final shape: {X_dev_stacked.shape}")
+        #print(f"X_dev_stacked: {X_dev_stacked.shape[0]}")
+        #print(f"y_dev: {len(y_dev_final)}")
+        #print(f"groups_dev: {len(groups_dev)}")
+        #print(f"groups_dev_orig: {len(orig_groups_dev)}")
 
         if self.config.oversample:
-            return (X_dev_stacked, X_test_stacked, y_dev_final, y_test_final, groups_dev, feature_sets_idxs,
-                orig_feature_sets_idxs, X_dev_stacked_orig, X_test_stacked_orig, orig_y_dev, orig_groups_dev)
+            return (X_stacked, y_final, filenames, feature_sets_idxs,
+                orig_feature_sets_idxs, X_stacked_orig, orig_y, orig_filenames)
         else:
-            return (X_dev_stacked, X_test_stacked, y_dev_final, y_test_final, groups_dev, feature_sets_idxs,
-                None, None, None, None, None)
+            return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
 
     def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
         """Helper method to compute feature set indices"""
@@ -295,7 +280,7 @@ class AuthorshipVerification:
             n_splits=5, shuffle=True, random_state=self.config.random_state
         )
 
-        if self.config.multiclass:
+        if self.config.positive_author is None:
             scoring_method = make_scorer(f1_score, average="macro", zero_division=1)
         else:
             scoring_method = make_scorer(f1_score, zero_division=1)
@@ -466,12 +451,11 @@ class AuthorshipVerification:
 
         y = [book.author for book in test_documents]
         filenames =[book.path.name for book in test_documents]
-        documents = [book.clean_text for book in test_documents]
         processed_documents = [book.processed for book in test_documents]
 
         print(f"Label distribution: {np.unique(y, return_counts=True)}")
 
-        if test_documents:
+        """if test_documents:
             test_indices = []
             for test_document in test_documents:
                 test_document_normalized = test_document.strip()
@@ -479,7 +463,6 @@ class AuthorshipVerification:
                     filename_normalized = filename.strip()
                     if test_document_normalized in filename_normalized:
                         test_indices.append(test_idx)
-
                 # print(f'Testing on: {test_documents}')
                 # print(f'Found test indices: {test_indices}')
                 if not test_indices:
@@ -490,52 +473,28 @@ class AuthorshipVerification:
                     return
         else:
             test_indices = list(range(len(documents)))
-            """if self.config.multiclass:
-                print(
-                    f"Full LOO evaluation: testing on all {len(test_indices)} documents (multiclass)"
-                )
-            else:
-                print(
-                    f"Full LOO evaluation: testing on all {len(test_indices)} documents (binary classification for {target})"
-                )"""
 
         print(f"Total documents to test: {len(test_indices)}")
 
         #TODO: estrarre i feature vectors, passare a train_model le features, le label, groups_dev,
         # il modello e il model name
 
-        #model = LogisticRegression(
-            #random_state=self.config.random_state,
-            #n_jobs=self.config.n_jobs,
-        #)
-        #print(f"\nBuilding classifier...\n")
-        #clf = self.train_model(X_dev, y_dev, groups_dev, model, "LogisticRegression")
-
         for test_idx in test_indices:
-            print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")
-            self.train_and_test_single_document(
-                test_idx,
-                test_indices,
-                documents,
-                y,
-                processed_documents,
-                filenames,
-                target,
-                self.config.save_results,
-                self.config.results_filename,
-                self.config.results_path,
-                experiment_type=self.config.experiment,
-            )
+            print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")"""
 
-        total_time = round((time.time() - start_time) / 60, 2)
-        if self.config.multiclass:
-            print(
-                f"Total time spent for multiclass model building: {total_time} minutes."
-            )
-        else:
-            print(
-                f"Total time spent for model building for author {target}: {total_time} minutes."
-            )
+        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
+            processed_documents, y, filenames)
+
+        #todo: valori oversample
+
+        model = LogisticRegression(
+            random_state=self.config.random_state,
+            n_jobs=self.config.n_jobs,
+        )
+        print(f"\nBuilding classifier...\n")
+        clf = self.train_model(X_stacked, y, filenames, model, "LogisticRegression")
+
+        return clf
 
 
     def run(self, target: str, test_documents: Union[str, List[str]]):
@@ -649,8 +608,6 @@ class AuthorshipVerification:
         else:
             raise NotImplementedError("not yet implemented")
 
-        # TODO: i parametri del train_and_test_single_document vanno sistemati); considerare che ci sono già i documenti
-        #  segmentati in "segmented" e processati in "processed_documents"
 
         (
             X_dev,
