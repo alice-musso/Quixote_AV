@@ -447,40 +447,37 @@ class AuthorshipVerification:
 
         print(f"{model_name} results for author {target_author} saved in {file_name}\n")
 
-    def fit(self, test_documents: List[Book]):
+    def fit(self, train_documents: List[Book]):
 
-        y = [book.author for book in test_documents]
-        filenames =[book.path.name for book in test_documents]
-        processed_documents = [book.processed for book in test_documents]
+        y = [book.author for book in train_documents]
+        filenames =[book.path.name for book in train_documents]
+        processed_documents = [book.processed for book in train_documents]
 
         print(f"Label distribution: {np.unique(y, return_counts=True)}")
 
-        """if test_documents:
-            test_indices = []
-            for test_document in test_documents:
-                test_document_normalized = test_document.strip()
-                for test_idx, filename in enumerate(filenames):
+        """if train_documents:
+            train_indices = []
+            for train_document in train_documents:
+                train_document_normalized = trani_document.strip()
+                for train_idx, filename in enumerate(filenames):
                     filename_normalized = filename.strip()
-                    if test_document_normalized in filename_normalized:
-                        test_indices.append(test_idx)
-                # print(f'Testing on: {test_documents}')
-                # print(f'Found test indices: {test_indices}')
-                if not test_indices:
+                    if train_document_normalized in filename_normalized:
+                        train_indices.append(test_idx)
+                # print(f'Testing on: {train_documents}')
+                # print(f'Found test indices: {train_indices}')
+                if not train_indices:
                     print(
-                        f'ERROR: Test document "{documents}" not found in available filenames'
+                        f'ERROR: Train document "{documents}" not found in available filenames'
                     )
                     print(f"Available filenames: {filenames}")
                     return
         else:
-            test_indices = list(range(len(documents)))
+            train_indices = list(range(len(documents)))
 
-        print(f"Total documents to test: {len(test_indices)}")
+        print(f"Total documents to train: {len(train_indices)}")
 
-        #TODO: estrarre i feature vectors, passare a train_model le features, le label, groups_dev,
-        # il modello e il model name
-
-        for test_idx in test_indices:
-            print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")"""
+        for train_idx in train_indices:
+            print(f"=== Processing document {train_idx + 1}/{len(train_indices)} ===")"""
 
         (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
             processed_documents, y, filenames)
@@ -493,8 +490,31 @@ class AuthorshipVerification:
         )
         print(f"\nBuilding classifier...\n")
         clf = self.train_model(X_stacked, y, filenames, model, "LogisticRegression")
+        self.clf = clf
 
         return clf
+
+    def predict(self, clf, test_corpus: List[Book]):
+
+        clf = self.clf
+
+        y = [book.author for book in test_corpus]
+        filenames = [book.path.name for book in test_corpus]
+        processed_documents = [book.processed for book in test_corpus]
+
+        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
+        processed_documents, y, filenames)
+
+        y_pred = clf.predict(X_stacked)
+
+        results = {
+            'filenames': filenames,
+            'label': y,
+            'prediction': y_pred,
+            'feature_sets_idxs': feature_sets_idxs
+        }
+
+        return results
 
 
     def run(self, target: str, test_documents: Union[str, List[str]]):
@@ -632,6 +652,7 @@ class AuthorshipVerification:
         X_len = len(X_dev_processed)
         print(f"X_len: {X_len}")
 
+        #estrae i vettori
         (X_dev,
             X_test,
             y_dev,
@@ -647,7 +668,7 @@ class AuthorshipVerification:
             X_dev_processed, X_test_processed, y_dev, y_test, groups_dev
         )
 
-        # da qui in poi dovrebbe andare
+        #costruisce il modello
 
         model = LogisticRegression(
             random_state=self.config.random_state,
