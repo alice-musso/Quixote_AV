@@ -51,35 +51,6 @@ QUIXOTE_DOCUMENTS = [
     'Cervantes - Don Quijote II'
 ]
 
-# ----------------------------------------------
-# Data loader
-# ----------------------------------------------
-"""def load_dataset(
-    test_documents: str, path: str = "src/data/corpus", keep_quixote=False
-) -> Tuple[List[str], List[str], List[str]]:
-    print("Loading data...")
-    print(f"Looking for files in: {path}")
-
-    corpus_path = Path(path)
-    assert corpus_path.exists(), f"ERROR: Path {path} does not exist!"
-    all_files = list(corpus_path.glob("*.txt"))
-    print(f"All .txt files found: {[f.name for f in all_files]}")
-
-    # print(f'Calling load_corpus with remove_test={False if test_document == "Avellaneda - Quijote apocrifo" else True}')
-
-    documents, authors, filenames = load_corpus(
-        path=path,
-        # remove_test= False if test_document == ["Avellaneda - Quijote apocrifo"] else True,
-        remove_unique_authors=False,
-        remove_quixote=not keep_quixote,
-        remove_avellaneda=True,
-        test_documents=test_documents,
-    )
-    print(f"After load_corpus, filenames: {filenames}")
-    print("Data loaded.")
-    return documents, authors, filenames
-    """
-
 
 # ----------------------------------------------
 # Model
@@ -170,7 +141,7 @@ class AuthorshipVerification:
         return processed_X"""
 
     def extract_feature_vectors(
-        self, processed_docs: List[spacy.tokens.Doc], y: List[str], filenames: List[str]) -> Tuple[np.ndarray, ...]:
+        self, processed_docs: List[spacy.tokens.Doc], y: List[str], filenames: List[str]):
 
         spanish_function_words = get_spanish_function_words()
 
@@ -178,65 +149,74 @@ class AuthorshipVerification:
             FeaturesFunctionWords(
                 function_words=spanish_function_words, ngram_range=(1, 1)
             ),
-            FeaturesPOST(n=(1, 3)),
+            FeatureSetReductor(
+                FeaturesPOST(n=(1, 3)), max_features=self.config.max_features
+            ),
             FeaturesMendenhall(upto=27),
             FeaturesSentenceLength(),
-            FeaturesDistortedView(method="DVEX", function_words=spanish_function_words),
+            FeatureSetReductor(
+                FeaturesDistortedView(method="DVEX", function_words=spanish_function_words), max_features=self.config.max_features
+            ),
             FeaturesPunctuation(),
-            FeaturesDEP(n=(2, 3), use_words=True),
+            FeatureSetReductor(
+                FeaturesDEP(n=(2, 3), use_words=True), max_features=self.config.max_features
+            ),
         ]
 
         hstacker = HstackFeatureSet(vectorizers)
-        feature_sets = []
-        feature_sets_orig = []
-        orig_filenames = filenames.copy()
+        X = hstacker.fit_transform(processed_docs, y)
+        return X, y
 
-        for vectorizer in vectorizers:
-            # print(f'\nExtracting {vectorizer}')
-            reductor = FeatureSetReductor(vectorizer, k_ratio=self.config.k_ratio)
 
-            # print('\nProcessing set')
-            features_set= reductor.fit_transform(processed_docs, y)
+        # feature_sets = []
+        # feature_sets_orig = []
+        # orig_filenames = filenames.copy()
 
-            if self.config.oversample:
-                feature_sets_orig.append(features_set)
-                orig_y = y.copy()
+        # for vectorizer in vectorizers:
+        #     reductor = FeatureSetReductor(vectorizer, keep_ratio=self.config.keep_ratio)
+        #
+        #     # print('\nProcessing set')
+        #     features_set= reductor.fit_transform(processed_docs, y)
+        #
+        #     if self.config.oversample:
+        #         feature_sets_orig.append(features_set)
+        #         orig_y = y.copy()
+        #
+        #         (
+        #             features_set,
+        #             y_oversampled,
+        #             features_set,
+        #             y_oversampled,
+        #             groups,
+        #         ) = reductor.oversample_DRO(
+        #             Xtr=features_set,
+        #             ytr=y,
+        #             groups=orig_filenames,
+        #             rebalance_ratio=self.config.rebalance_ratio,
+        #         )
+        #         feature_sets.append(features_set)
+        #     else:
+        #         feature_sets.append(features_set)
 
-                (
-                    features_set,
-                    y_oversampled,
-                    features_set,
-                    y_oversampled,
-                    groups,
-                ) = reductor.oversample_DRO(
-                    Xtr=features_set,
-                    ytr=y,
-                    groups=orig_filenames,
-                    rebalance_ratio=self.config.rebalance_ratio,
-                )
-                feature_sets.append(features_set)
-            else:
-                feature_sets.append(features_set)
-
-        orig_feature_sets_idxs = self._compute_feature_set_idx(
-            vectorizers, feature_sets_orig
-        )
-        feature_sets_idxs = self._compute_feature_set_idx(vectorizers, feature_sets)
+        # orig_feature_sets_idxs = self._compute_feature_set_idx(
+        #     vectorizers, feature_sets_orig
+        # )
+        # feature_sets_idxs = self._compute_feature_set_idx(vectorizers, feature_sets)
 
         # print(f'Feature sets computed: {len(feature_sets_dev)}')
         # print('\nStacking feature vectors')
 
-        if feature_sets_orig:
-            X_stacked_orig = hstacker._hstack(feature_sets_orig)
+        # if feature_sets_orig:
+        #     X_stacked_orig = hstacker._hstack(feature_sets_orig)
             # print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
             # print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
 
-        X_stacked = hstacker._hstack(feature_sets)
+        # X_stacked = hstacker._hstack(feature_sets)
 
         # print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
         # print(f'X_test_stacked shape: {X_test_stacked.shape}')
 
-        y_final = y_oversampled if self.config.oversample else y
+        # y_final = y_oversampled if self.config.oversample else y
 
         #print("Feature vectors extracted.")
         #print(f"Vector document final shape: {X_dev_stacked.shape}")
@@ -245,11 +225,11 @@ class AuthorshipVerification:
         #print(f"groups_dev: {len(groups_dev)}")
         #print(f"groups_dev_orig: {len(orig_groups_dev)}")
 
-        if self.config.oversample:
-            return (X_stacked, y_final, filenames, feature_sets_idxs,
-                orig_feature_sets_idxs, X_stacked_orig, orig_y, orig_filenames)
-        else:
-            return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
+        # if self.config.oversample:
+        #     return (X_stacked, y_final, filenames, feature_sets_idxs,
+        #         orig_feature_sets_idxs, X_stacked_orig, orig_y, orig_filenames)
+        # else:
+        #     return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
 
     def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
         """Helper method to compute feature set indices"""
@@ -449,53 +429,37 @@ class AuthorshipVerification:
 
     def fit(self, train_documents: List[Book]):
 
-        y = [book.author for book in train_documents]
-        filenames =[book.path.name for book in train_documents]
-        segmented = [book.segmented for book in train_documents]
+        texts = []
+        labels = []
+        for book in train_documents:
+            label = book.author
+            texts.append(book.clean_text)
+            labels.append(label)
+            for segment in book.segmented:
+                texts.append(segment)
+                labels.append(label)
+
+        X, y = self.extract_feature_vectors(texts, labels)
 
 
-        print(f"Label distribution: {np.unique(y, return_counts=True)}")
-
-        """if train_documents:
-            train_indices = []
-            for train_document in train_documents:
-                train_document_normalized = train_document.strip()
-                for train_idx, filename in enumerate(filenames):
-                    filename_normalized = filename.strip()
-                    if train_document_normalized in filename_normalized:
-                        train_indices.append(test_idx)
-                # print(f'Testing on: {train_documents}')
-                # print(f'Found test indices: {train_indices}')
-                if not train_indices:
-                    print(
-                        f'ERROR: Train document "{documents}" not found in available filenames'
-                    )
-                    print(f"Available filenames: {filenames}")
-                    return
-        else:
-            train_indices = list(range(len(documents)))
-
-        print(f"Total documents to train: {len(train_indices)}")
-
-        for train_idx in train_indices:
-            print(f"=== Processing document {train_idx + 1}/{len(train_indices)} ===")"""
-
-        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
-            segmented, y, filenames)
+        # (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
+        #     segmented, y, filenames)
 
         #todo: valori oversample
 
-        model = LogisticRegression(
+        print(f"\nBuilding classifier...\n")
+        cls = LogisticRegression(
             random_state=self.config.random_state,
             n_jobs=self.config.n_jobs,
         )
-        print(f"\nBuilding classifier...\n")
-        clf = self.train_model(X_stacked, y, filenames, model, "LogisticRegression")
-        self.clf = clf
+        cls.fit(X, y)
 
-        return clf
+        print('MANCA LA MODEL SELECTION')
+
+        return cls
 
     def predict(self, clf, test_corpus: List[Book]):
+        raise NotImplementedError('predict not yet implemented')
 
         clf = self.clf
 

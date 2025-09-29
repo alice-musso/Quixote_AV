@@ -399,7 +399,7 @@ class AuthorshipVerification:
             print(f'\nExtracting {vectorizer}')
             reductor = FeatureSetReductor(
                 vectorizer, 
-                k_ratio=self.config.k_ratio
+                keep_ratio=self.config.k_ratio
             )
 
             print('\nProcessing development set')

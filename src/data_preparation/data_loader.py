@@ -87,13 +87,13 @@ class DocumentProcessor:
                 os.makedirs(parent, exist_ok=True)
             pickle.dump(self.cache, open(self.savecache, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-    def process_document(self, document, filename):
-        if filename not in self.cache:
-            print(f'{filename} not in cache')
+    def process_document(self, document, cache_idx):
+        if cache_idx not in self.cache:
+            print(f'{cache_idx} not in cache')
             processed_doc = self.nlp(document)
-            self.cache[filename] = processed_doc
+            self.cache[cache_idx] = processed_doc
             self.save_cache()
-        processed_doc = self.cache[filename]
+        processed_doc = self.cache[cache_idx]
         return processed_doc
 
     # def process_documents(self, documents, filenames):
@@ -104,24 +104,26 @@ class DocumentProcessor:
 
 
 def load_corpus(path: str, spacy_language_model: 'SpaCy'):
-    """Load corpus documents with optional filtering.
-
-    Args:
-        path: Directory path containing corpus files
-
-
-    Returns:
-        Tuple of (documents, authors, filenames)
-    """
-
     processor = DocumentProcessor(language_model=spacy_language_model)
     segmentator = Segmentation()
 
     corpus = []
     for file in tqdm(Path(path).glob('*.txt'), desc=f'Loading corpus from {path}'):
         book = Book(file)
-        book.processed = processor.process_document(book.clean_text, Path(book.path).name)
-        book.segmented = segmentator.transform(book.processed.text)
+
+        # spacy processing of the full document
+        cache_idx = Path(book.path).name
+        book.processed = processor.process_document(book.clean_text, cache_idx)
+
+        # segmentation
+        segments = segmentator.transform(book.clean_text)
+
+        # spacy processing of the segments
+        book.segmented = []
+        for segment_no, segment in enumerate(segments):
+            processed_segment = processor.process_document(segment, f'{cache_idx}::{segment_no}')
+            book.segmented.append(processed_segment)
+
         corpus.append(book)
 
     authors = set([book.author for book in corpus])

@@ -12,21 +12,15 @@ class Segmentation:
     
     VALID_POLICIES = {'by_endline', 'by_sentence'}
     
-    split_policy: str = 'by_sentence'
-    tokens_per_fragment: int = 500
-    min_tokens: int = 8
-    keep_full: bool = True
-    
-    def __post_init__(self):
-        """Validate initialization parameters."""
-        if self.split_policy not in self.VALID_POLICIES:
-            raise ValueError(
-                f'Unknown policy, valid ones are {self.VALID_POLICIES}'
-            )
-    
+    def __init__(self, split_policy='by_sentence', tokens_per_fragment=500, min_tokens=0):
+        assert split_policy in Segmentation.VALID_POLICIES, \
+            f'unknown {split_policy=}, valid ones are {self.VALID_POLICIES}'
+        self.split_policy = split_policy
+        self.tokens_per_fragment = tokens_per_fragment
+        self.min_tokens = min_tokens
+
     def transform(self, text):
         """Transform documents into segments according to the specified policy."""
-        
 
         text_fragments = (
             self._split_by_endline(text)

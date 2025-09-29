@@ -599,7 +599,6 @@ class FeaturesDEP:
 
             return ngram_deps
 
-
     def fit(self, documents, y=None):
         self.vectorizer.fit(documents)
         return self
@@ -626,13 +625,15 @@ class FeaturesDEP:
 
     
 class FeatureSetReductor:
-    def __init__(self, feature_extractor, measure=chi2, k=5000, k_ratio=1.0, normalize=True, oversample=True):
+
+    def __init__(self, feature_extractor, measure=chi2, max_features=5000, normalize=True, oversample=False):
         self.feature_extractor = feature_extractor
-        self.k = k
-        self.k_ratio = k_ratio
+        self.max_features = max_features
         self.measure = measure
         self.normalize = normalize 
         self.oversample = oversample
+        if (oversample==True):
+            raise NotImplementedError('Oversample not yet implemented')
         self.is_sparse = True
         if self.normalize:
             self.normalizer = Normalizer()
@@ -640,44 +641,34 @@ class FeatureSetReductor:
     def __str__(self) -> str:
         return( f'FeatureSetReductor for {self.feature_extractor}' )
 
-
-    def fit(self, documents, y_dev=None):
-        return self.feature_extractor.fit(documents, y_dev)
-
-    def transform(self, documents, y_dev=None):
-        matrix = self.feature_extractor.transform(documents)
+    def transform(self, X, y):
+        matrix = self.feature_extractor.transform(X)
 
         if self.normalize:
-            matrix_norm  = self.normalizer.transform(matrix) 
-            matrix_red = self.feat_sel.transform(matrix_norm)
-        else:
-            matrix_red = self.feat_sel.transform(matrix, y_dev)
-        return matrix_red 
+            matrix  = self.normalizer.transform(matrix)
 
-    def fit_transform(self, documents, y_dev=None):
-        matrix = self.feature_extractor.fit_transform(documents, y_dev)
-        self.features_in = matrix.shape[1]
+        matrix = self.feature_selector.transform(matrix, y)
+        return matrix
 
-        if self.features_in < self.k:
-            self.k = self.features_in
-        else:
-            #self.k = round(features_in * 0.1) #keep 10% of features
-            self.k = round(self.features_in * self.k_ratio) #keep k_ratio% of features
+    def fit_transform(self, X, y):
+        matrix = self.feature_extractor.fit_transform(X, y)
+        feature_dimensions = matrix.shape[1]
 
-        self.feat_sel = SelectKBest(self.measure, k=self.k)
-        print('features in:', self.features_in, 'k:', self.k)
-        print()
+        self.feature_selector = SelectKBest(self.measure, k='all')
+        if feature_dimensions > self.max_features:
+            self.feature_selector = SelectKBest(self.measure, k=self.max_features)
+
+        print(f'{self.feature_extractor}: reducing from {feature_dimensions} to {self.max_features}')
+        matrix = self.feature_selector.fit_transform(matrix, y)
 
         if self.normalize:
-            matrix_norm  = self.normalizer.fit_transform(matrix, y_dev)
-            matrix_red = self.feat_sel.fit_transform(matrix_norm, y_dev)
-            
-        else:
-            matrix_red = self.feat_sel.fit_transform(matrix, y_dev)
+            matrix  = self.normalizer.fit_transform(matrix, y)
 
-        return matrix_red
+        return matrix
     
     def oversample_DRO(self, Xtr, ytr, Xte, yte, groups=None, rebalance_ratio=0.2, test_samples=100):
+        raise NotImplementedError('overasmple not yet implemented')
+
         if not isinstance(ytr, np.ndarray):
             ytr = np.array(ytr)
         self.dro = DistributionalRandomOversampling(rebalance_ratio=rebalance_ratio)

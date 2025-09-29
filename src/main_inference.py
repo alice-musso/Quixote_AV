@@ -20,7 +20,7 @@ class ModelConfig:
     n_jobs: int = 30
     segment_min_token_size: int = 500
     random_state: int = 0
-    k_ratio: float = 1.0
+    max_features: int = 5000
     oversample: bool = False
     rebalance_ratio: float = 0.2
     save_res: bool = True
@@ -56,7 +56,6 @@ class ModelConfig:
         return config
             
 
-
 def main():
     
     config = ModelConfig.from_args()
@@ -70,9 +69,10 @@ def main():
         train_corpus = binarize_corpus(train_corpus, positive_author=config.positive_author)
         test_corpus = binarize_corpus(test_corpus, positive_author=config.positive_author)
 
-    av_system = AuthorshipVerification(config, nlp = spacy_language_model)
+    av_system = AuthorshipVerification(config, nlp=spacy_language_model)
     av_system.fit(train_corpus)
     av_system.predict(test_corpus)
+
 
 if __name__ == '__main__':
     main()
