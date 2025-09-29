@@ -451,14 +451,15 @@ class AuthorshipVerification:
 
         y = [book.author for book in train_documents]
         filenames =[book.path.name for book in train_documents]
-        processed_documents = [book.processed for book in train_documents]
+        segmented = [book.segmented for book in train_documents]
+
 
         print(f"Label distribution: {np.unique(y, return_counts=True)}")
 
         """if train_documents:
             train_indices = []
             for train_document in train_documents:
-                train_document_normalized = trani_document.strip()
+                train_document_normalized = train_document.strip()
                 for train_idx, filename in enumerate(filenames):
                     filename_normalized = filename.strip()
                     if train_document_normalized in filename_normalized:
@@ -480,7 +481,7 @@ class AuthorshipVerification:
             print(f"=== Processing document {train_idx + 1}/{len(train_indices)} ===")"""
 
         (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
-            processed_documents, y, filenames)
+            segmented, y, filenames)
 
         #todo: valori oversample
 
@@ -513,6 +514,8 @@ class AuthorshipVerification:
             'prediction': y_pred,
             'feature_sets_idxs': feature_sets_idxs
         }
+
+        #todo: mettere evaluate model + save results
 
         return results
 
