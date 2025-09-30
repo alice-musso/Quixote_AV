@@ -3,9 +3,10 @@ import pickle
 from pathlib import Path
 from typing import List
 import spacy
-from tqdm import tqdm
 import re
 from collections import Counter
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 # ------------------------------------------------------------------------
@@ -14,9 +15,10 @@ from collections import Counter
 import nltk
 from nltk.corpus import stopwords
 
-from src.data_preparation.segmentation import Segmentation
+from src.data_preparation.segmentation import Segmentator
 
-nltk.download('stopwords')
+
+
 
 def get_spanish_function_words():
     stop_words_sp = set(stopwords.words('spanish'))
@@ -66,10 +68,20 @@ class Book:
 
 class DocumentProcessor:
 
-    def __init__(self, language_model=None, savecache='./data_preparation/.cache/processed_docs.pkl'):
-        self.nlp = language_model
+    def __init__(self, language_model="es_dep_news_trf", language_model_length = 1_200_000, savecache='./data_preparation/.cache/processed_docs.pkl'):
+        self.language_model = language_model
+        self.language_model_length = language_model_length
+        self.nlp = None  # lazy load
         self.savecache = savecache
         self.init_cache()
+
+    def get_nlp(self):
+        if self.nlp is None:
+            print('loading spacy model...')
+            self.nlp = spacy.load(self.language_model)
+            self.nlp.max_length = self.language_model_length
+            print('[spacy loaded]')
+        return self.nlp
 
     def init_cache(self):
         if self.savecache is None or not os.path.exists(self.savecache):
@@ -90,41 +102,40 @@ class DocumentProcessor:
     def process_document(self, document, cache_idx):
         if cache_idx not in self.cache:
             print(f'{cache_idx} not in cache')
-            processed_doc = self.nlp(document)
+            processed_doc = self.get_nlp()(document)
             self.cache[cache_idx] = processed_doc
             self.save_cache()
         processed_doc = self.cache[cache_idx]
         return processed_doc
 
-    # def process_documents(self, documents, filenames):
-    #     processed_docs = {}
-    #     for filename, doc in tqdm(zip(filenames, documents), total=len(filenames), desc='processing with spacy'):
-    #         processed_docs[filename[:-2]] = self.process_document(doc, filename)
-    #     return processed_docs
+
+def _job_open_book(file):
+
+    cache_idx = Path(file).name.replace(' ','_')
+    processor = DocumentProcessor(savecache=f'./data_preparation/.cache/processed_doc_{cache_idx}.pkl')
+    segmentator = Segmentator()
+
+    book = Book(file)
+
+    # spacy processing of the full document
+    book.processed = processor.process_document(book.clean_text, cache_idx)
+
+    # segmentation
+    book.segmented = segmentator.transform(book.processed)
+
+    return book
 
 
-def load_corpus(path: str, spacy_language_model: 'SpaCy'):
-    processor = DocumentProcessor(language_model=spacy_language_model)
-    segmentator = Segmentation()
+def load_corpus(path: str):
 
-    corpus = []
-    for file in tqdm(Path(path).glob('*.txt'), desc=f'Loading corpus from {path}'):
-        book = Book(file)
+    multiprocessing.set_start_method("spawn", force=True)
 
-        # spacy processing of the full document
-        cache_idx = Path(book.path).name
-        book.processed = processor.process_document(book.clean_text, cache_idx)
-
-        # segmentation
-        segments = segmentator.transform(book.clean_text)
-
-        # spacy processing of the segments
-        book.segmented = []
-        for segment_no, segment in enumerate(segments):
-            processed_segment = processor.process_document(segment, f'{cache_idx}::{segment_no}')
-            book.segmented.append(processed_segment)
-
-        corpus.append(book)
+    paths = Path(path).glob('*.txt')
+    with ProcessPoolExecutor(max_workers=16) as executor:
+        futures = {executor.submit(_job_open_book, p): p for p in paths}
+        corpus = []
+        for future in as_completed(futures):
+            corpus.append(future.result())
 
     authors = set([book.author for book in corpus])
 
@@ -132,6 +143,7 @@ def load_corpus(path: str, spacy_language_model: 'SpaCy'):
     print(f'Total authors: {len(authors)}')
 
     return corpus
+
 
 def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
     for book in corpus:

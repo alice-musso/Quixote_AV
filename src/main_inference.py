@@ -5,7 +5,10 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 import spacy
+import nltk
 
+nltk.download('punkt_tab')
+nltk.download('stopwords')
 
 from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS
 from data_preparation.data_loader import load_corpus, binarize_corpus
@@ -56,23 +59,28 @@ class ModelConfig:
         return config
             
 
-def main():
-    
+if __name__ == '__main__':
+
     config = ModelConfig.from_args()
 
-    spacy_language_model = spacy.load('es_dep_news_trf')
-
-    train_corpus = load_corpus(config.train_dir, spacy_language_model)
-    test_corpus = load_corpus(config.test_dir, spacy_language_model)
+    train_corpus = load_corpus(config.train_dir)
+    test_corpus = load_corpus(config.test_dir)
 
     if config.positive_author:
         train_corpus = binarize_corpus(train_corpus, positive_author=config.positive_author)
         test_corpus = binarize_corpus(test_corpus, positive_author=config.positive_author)
 
+    spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
     av_system.fit(train_corpus)
-    av_system.predict(test_corpus)
 
+    av_system.leave_one_out(train_corpus)
 
-if __name__ == '__main__':
-    main()
+    predicted_authors, posteriors = av_system.predict(test_corpus, return_posteriors=True)
+    index_of_Cervantes = av_system.index_of_author('Cervantes')
+
+    # output
+    for i, book in enumerate(test_corpus):
+        print(f'"{book.title}" author={book.author}, '
+              f'predicted={predicted_authors[i]}, '
+              f'posterior={posteriors[i,index_of_Cervantes]:.4f}')

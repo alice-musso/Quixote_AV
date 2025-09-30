@@ -1,20 +1,12 @@
-import os
-from pathlib import Path
+from joblib import Parallel, delayed
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from types import SimpleNamespace
 # from oversampling.dro import DistributionalRandomOversampling
-import string
 from scipy.sparse import hstack, csr_matrix, issparse
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.preprocessing import Normalizer
 import numpy as np
 from tqdm import tqdm
-import pickle
 from nltk import ngrams
-# uncomment these packages for testing the Syllabic Quantities extractor
-# from cltk.prosody.lat.macronizer import Macronizer
-# from cltk.prosody.lat.scanner import Scansion
-from spacy.tokens import DocBin
 
 from string import punctuation
 sp_punctuation = punctuation + '¡¿'
@@ -641,13 +633,13 @@ class FeatureSetReductor:
     def __str__(self) -> str:
         return( f'FeatureSetReductor for {self.feature_extractor}' )
 
-    def transform(self, X, y):
+    def transform(self, X):
         matrix = self.feature_extractor.transform(X)
 
+        matrix = self.feature_selector.transform(matrix)
         if self.normalize:
             matrix  = self.normalizer.transform(matrix)
 
-        matrix = self.feature_selector.transform(matrix, y)
         return matrix
 
     def fit_transform(self, X, y):
@@ -657,8 +649,10 @@ class FeatureSetReductor:
         self.feature_selector = SelectKBest(self.measure, k='all')
         if feature_dimensions > self.max_features:
             self.feature_selector = SelectKBest(self.measure, k=self.max_features)
+            print(f'{self.feature_extractor}: reducing from {feature_dimensions} to {self.max_features}')
+        else:
+            self.normalize = False
 
-        print(f'{self.feature_extractor}: reducing from {feature_dimensions} to {self.max_features}')
         matrix = self.feature_selector.fit_transform(matrix, y)
 
         if self.normalize:
@@ -732,21 +726,56 @@ class FeatureSetReductor:
 
 
 class HstackFeatureSet:
-    def __init__(self, feats=None, *vectorizers):
+    def __init__(self, *vectorizers, verbose=False):
         self.vectorizers = vectorizers
+        self.verbose = verbose
 
-    def fit(self, documents, authors=None):
-        for v in self.vectorizers:
-            v.fit(documents, authors)
-        return self
+    # def fit(self, documents, authors=None):
+    #     for v in self.vectorizers:
+    #         v.fit(documents, authors)
+    #     return self
 
-    def transform(self, documents, authors=None):
-        feats = [v.transform(documents, authors) for v in self.vectorizers]
+    def transform(self, documents):
+        feats = [v.transform(documents) for v in self.vectorizers]
         return self._hstack(feats)
+
+    # def transform(self, documents):
+    #     feats = Parallel(n_jobs=4)(
+    #         delayed(v.transform)(documents) for v in self.vectorizers
+    #     )
+    #     return self._hstack(feats)
 
     def fit_transform(self, documents, authors=None):
-        feats = [v.fit_transform(documents, authors) for v in self.vectorizers]
-        return self._hstack(feats)
+        feats = []
+        for vectorizer in self.vectorizers:
+            if self.verbose:
+                print(f'extracting features with {vectorizer}')
+            Xi = vectorizer.fit_transform(documents, authors)
+            feats.append(Xi)
+            if self.verbose:
+                print(f'\textracted {Xi.shape[1]} features')
+        X = self._hstack(feats)
+        if self.verbose:
+            print(f'final matrix has shape={X.shape}')
+        return X
+
+    # def fit_transform(self, documents, authors=None):
+    #     def _process(vectorizer):
+    #         if self.verbose:
+    #             print(f'extracting features with {vectorizer}')
+    #         Xi = vectorizer.fit_transform(documents, authors)
+    #         if self.verbose:
+    #             print(f'\textracted {Xi.shape[1]} features')
+    #         return Xi
+    #
+    #     feats = Parallel(n_jobs=4)(
+    #         delayed(_process)(vectorizer) for vectorizer in self.vectorizers
+    #     )
+    #
+    #     X = self._hstack(feats)
+    #     if self.verbose:
+    #         print(f'final matrix has shape={X.shape}')
+    #     return X
 
     def _hstack(self, feats):
         for i, f in enumerate(feats):

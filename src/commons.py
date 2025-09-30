@@ -1,10 +1,10 @@
 from typing import List, Tuple, Dict, Optional, Any, Union
 import numpy as np
 import spacy
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedGroupKFold, GridSearchCV
+from sklearn.model_selection import StratifiedGroupKFold, GridSearchCV, LeaveOneGroupOut
 from sklearn.metrics import (
     f1_score, 
     accuracy_score,
@@ -17,13 +17,14 @@ import time
 from pathlib import Path
 from tqdm import tqdm
 import nltk
+import pandas as pd
 
 from src.data_preparation.data_loader import binarize_corpus
 
-nltk.download('punkt_tab')
+
 from nltk import sent_tokenize
 from data_preparation.data_loader import load_corpus, get_spanish_function_words, Book
-from data_preparation.segmentation import Segmentation
+# from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
     FeaturesFunctionWords,
     FeaturesDistortedView,
@@ -61,6 +62,7 @@ class AuthorshipVerification:
     def __init__(self, config: "ModelConfig", nlp: spacy.Language):
         self.config = config
         self.nlp = nlp
+        self.cls = None
 
     """def loo_multiple_test_split( self, test_index: int, test_indexes, X: List[str], y: List[int],
         doc: str, ylabel: int, filenames: List[str],) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
@@ -140,8 +142,7 @@ class AuthorshipVerification:
         print(f"None count: {none_count}\n")
         return processed_X"""
 
-    def extract_feature_vectors(
-        self, processed_docs: List[spacy.tokens.Doc], y: List[str], filenames: List[str]):
+    def feature_extraction_fit(self, processed_docs: List[spacy.tokens.Doc], y: List[str]):
 
         spanish_function_words = get_spanish_function_words()
 
@@ -163,9 +164,13 @@ class AuthorshipVerification:
             ),
         ]
 
-        hstacker = HstackFeatureSet(vectorizers)
-        X = hstacker.fit_transform(processed_docs, y)
+        self.hstacker = HstackFeatureSet(*vectorizers, verbose=True)
+        X = self.hstacker.fit_transform(processed_docs, y)
+        y = np.asarray(y)
         return X, y
+
+    def feature_extraction_transform(self, processed_docs: List[spacy.tokens.Doc]):
+        return self.hstacker.transform(processed_docs)
 
 
         # feature_sets = []
@@ -431,43 +436,130 @@ class AuthorshipVerification:
 
         texts = []
         labels = []
-        for book in train_documents:
+        groups = []
+        for i, book in enumerate(train_documents):
             label = book.author
-            texts.append(book.clean_text)
+            texts.append(book.processed)
             labels.append(label)
+            groups.append(i)
             for segment in book.segmented:
                 texts.append(segment)
                 labels.append(label)
+                groups.append(i)
 
-        X, y = self.extract_feature_vectors(texts, labels)
+        X, y = self.feature_extraction_fit(texts, labels)
 
-
-        # (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
-        #     segmented, y, filenames)
-
-        #todo: valori oversample
-
-        print(f"\nBuilding classifier...\n")
-        cls = LogisticRegression(
-            random_state=self.config.random_state,
-            n_jobs=self.config.n_jobs,
+        # model selection
+        print(f"Building classifier: model selection\n")
+        mod_selection = GridSearchCV(
+            estimator=LogisticRegression(
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
+            ),
+            param_grid={
+                'C': np.logspace(-4, 4, 9),
+                'class_weight': [None, 'balanced']
+            },
+            cv=LeaveOneGroupOut(),
+            refit=False,
+            verbose=1,
+            scoring=make_scorer(f1_score, pos_label='Cervantes', zero_division=1.0),
+            n_jobs=-1
         )
-        cls.fit(X, y)
+        mod_selection.fit(X, y, groups=groups)
+        # cv_results = pd.DataFrame(mod_selection.cv_results_)
 
-        print('MANCA LA MODEL SELECTION')
 
-        return cls
+        best_params = mod_selection.best_params_
+        print('best params:', mod_selection.best_params_)
+        print('best score:', mod_selection.best_score_)
 
-    def predict(self, clf, test_corpus: List[Book]):
-        raise NotImplementedError('predict not yet implemented')
+        print(f"Building classifier: classifier calibration\n")
+        self.cls = CalibratedClassifierCV(
+            LogisticRegression(
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs,
+                **best_params
+            ),
+            cv=10,
+            # method='isotonic',
+            method='sigmoid',
+            n_jobs=-1
+        )
+        self.cls.fit(X, y)
 
-        clf = self.clf
+        print('[done]')
 
-        y = [book.author for book in test_corpus]
+    def leave_one_out(self, train_documents: List[Book]):
+
+        assert self.cls is not None, 'leave_one_out called before fit!'
+
+        texts = []
+        labels = []
+        groups = []
+        titles = []
+        for i, book in enumerate(train_documents):
+            label = book.author
+            texts.append(book.processed)
+            labels.append(label)
+            groups.append(i)
+            titles.append(book.title)
+            for segment in book.segmented:
+                texts.append(segment)
+                labels.append(label)
+                groups.append(i)
+                titles.append(book.title)
+
+        X, y = self.feature_extraction_fit(texts, labels)
+
+        loo = LeaveOneGroupOut()
+        for train_index, test_index in loo.split(X, y, groups):
+            Xtr, ytr = X[train_index], y[train_index]
+            Xte, yte = X[test_index],  y[test_index]
+            cls_clone = clone(self.cls)
+            cls_clone.fit(Xtr, ytr)
+            predictions = cls_clone.predict(Xte)
+            book_prediction = predictions[0]
+            book_label = yte[0]
+            book_title = titles[test_index[0]]
+            # if book_label!=book_prediction:
+            #     print(f'error in "{book_title}": {book_label=}, {book_prediction=}')
+
+            print(f'prediction "{book_title}": {book_label=}, {book_prediction=} '
+                  f'[{"error" if book_prediction!=book_label else "OK"}]')
+
+
+    def predict(self, test_corpus: List[Book], return_posteriors=False):
+
+        texts = [book.processed for book in test_corpus]
+        labels = [book.author for book in test_corpus]
+
+        X = self.feature_extraction_transform(texts)
+
+        y_predicted = self.cls.predict(X)
+        if return_posteriors:
+            posteriors = self.cls.predict_proba(X)
+            return y_predicted, posteriors
+        else:
+            return y_predicted
+
+    @property
+    def classes(self):
+        return self.cls.classes_
+
+    def index_of_author(self, author):
+        return self.classes.tolist().index(author)
+
+
+
+
+
+
+
         filenames = [book.path.name for book in test_corpus]
         processed_documents = [book.processed for book in test_corpus]
 
-        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.extract_feature_vectors(
+        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.feature_extraction_fit(
         processed_documents, y, filenames)
 
         y_pred = clf.predict(X_stacked)
@@ -631,7 +723,7 @@ class AuthorshipVerification:
             original_X_test,
             orig_y_dev,
             orig_groups_dev,
-        ) = self.extract_feature_vectors(
+        ) = self.feature_extraction_fit(
             X_dev_processed, X_test_processed, y_dev, y_test, groups_dev
         )
 
