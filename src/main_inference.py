@@ -1,14 +1,15 @@
-import argparse
 import os.path
 import sys
+import argparse
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 import spacy
 import nltk
 
-nltk.download('punkt_tab')
-nltk.download('stopwords')
+#nltk.download('punkt_tab')
+#nltk.download('stopwords')
+
 
 from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS
 from data_preparation.data_loader import load_corpus, binarize_corpus
@@ -60,8 +61,10 @@ class ModelConfig:
             
 
 if __name__ == '__main__':
-
+    #print("ENTRA")
     config = ModelConfig.from_args()
+    #print(config.positive_author)
+
 
     train_corpus = load_corpus(config.train_dir)
     test_corpus = load_corpus(config.test_dir)
@@ -77,10 +80,12 @@ if __name__ == '__main__':
     av_system.leave_one_out(train_corpus)
 
     predicted_authors, posteriors = av_system.predict(test_corpus, return_posteriors=True)
-    index_of_Cervantes = av_system.index_of_author('Cervantes')
+
+    if config.positive_author:
+        index_of_positive_author= av_system.index_of_author(config.positive_author)
 
     # output
     for i, book in enumerate(test_corpus):
         print(f'"{book.title}" author={book.author}, '
               f'predicted={predicted_authors[i]}, '
-              f'posterior={posteriors[i,index_of_Cervantes]:.4f}')
+              f'posterior={posteriors[i,index_of_positive_author]:.4f}')

@@ -15,26 +15,22 @@ from sklearn.metrics import (
 import csv
 import time
 from pathlib import Path
-from tqdm import tqdm
-import nltk
-import pandas as pd
 
-from src.data_preparation.data_loader import binarize_corpus
+from data_preparation.data_loader import (binarize_corpus,
+                                            load_corpus,
+                                            get_spanish_function_words,
+                                            Book)
 
-
-from nltk import sent_tokenize
-from data_preparation.data_loader import load_corpus, get_spanish_function_words, Book
-# from data_preparation.segmentation import Segmentation
 from feature_extraction.features import (
-    FeaturesFunctionWords,
-    FeaturesDistortedView,
-    FeaturesMendenhall,
-    FeaturesSentenceLength,
-    FeaturesPOST,
-    FeatureSetReductor,
-    FeaturesDEP,
-    FeaturesPunctuation,
-    HstackFeatureSet,
+        FeaturesFunctionWords,
+        FeaturesDistortedView,
+        FeaturesMendenhall,
+        FeaturesSentenceLength,
+        FeaturesPOST,
+        FeatureSetReductor,
+        FeaturesDEP,
+        FeaturesPunctuation,
+        HstackFeatureSet,
 )
 
 import warnings
@@ -236,8 +232,8 @@ class AuthorshipVerification:
         # else:
         #     return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
 
-    def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
-        """Helper method to compute feature set indices"""
+    """def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
+        Helper method to compute feature set indices
         start_idx = 0
         end_idx = 0
         feature_sets_idxs = {}
@@ -254,9 +250,9 @@ class AuthorshipVerification:
             feature_sets_idxs[vect] = (start_idx, end_idx)
             start_idx = end_idx
 
-        return feature_sets_idxs
+        return feature_sets_idxs"""
 
-    def train_model(self, X_dev: np.ndarray, y_dev: List[str], groups_dev: List[str],
+    """def train_model(self, X_dev: np.ndarray, y_dev: List[str], groups_dev: List[str],
         model: BaseEstimator, model_name: str) -> BaseEstimator:
 
         param_grid = {"C": np.logspace(-4, 4, 9), "class_weight": ["balanced", None]}
@@ -288,7 +284,7 @@ class AuthorshipVerification:
 
         h1 = CalibratedClassifierCV(h, n_jobs=self.config.n_jobs).fit(X_dev, y_dev)
 
-        return h1
+        return h1"""
 
     def evaluate_model(self, clf: BaseEstimator,X_test: np.ndarray, y_test: List[str],return_proba: bool = True,
     ) -> Tuple[float, float, np.ndarray, float, Optional[str]]:
@@ -463,9 +459,10 @@ class AuthorshipVerification:
             cv=LeaveOneGroupOut(),
             refit=False,
             verbose=1,
-            scoring=make_scorer(f1_score, pos_label='Cervantes', zero_division=1.0),
+            scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
             n_jobs=-1
         )
+        print(set([(yi,gi) for yi, gi in zip(y,groups)]))
         mod_selection.fit(X, y, groups=groups)
         # cv_results = pd.DataFrame(mod_selection.cv_results_)
 
@@ -571,13 +568,13 @@ class AuthorshipVerification:
             'feature_sets_idxs': feature_sets_idxs
         }
 
-        #todo: mettere evaluate model + save results
+
 
         return results
 
 
-    def run(self, target: str, test_documents: Union[str, List[str]]):
-        """Run the complete authorship verification process"""
+    """def run(self, target: str, test_documents: Union[str, List[str]]):
+        Run the complete authorship verification process
         start_time = time.time()
         print(f'Start time: {time.strftime("%H:%M")}')
 
@@ -638,7 +635,7 @@ class AuthorshipVerification:
         print(f"Total documents to test: {len(test_indices)}")
 
         for test_idx in test_indices:
-            print(f"\n=== Processing document {test_idx + 1}/{len(test_indices)} ===")
+            print(f"=== Processing document {test_idx + 1}/{len(test_indices)} ===")
 
             self.train_and_test_single_document(
                 test_idx,
@@ -667,7 +664,7 @@ class AuthorshipVerification:
     def train_and_test_single_document(self, test_idx: int, test_indexes: List[int], documents: List[str],
         y: List[int], processed_documents: Dict[str, spacy.tokens.Doc], filenames: List[str], target: str,
         save_results: bool, file_name: str, path_name: str, experiment_type: str):
-        """Process a single document for authorship verification"""
+        Process a single document for authorship verification
         start_time_single_iteration = time.time()
         np.random.seed(self.config.random_state)
 
@@ -760,4 +757,4 @@ class AuthorshipVerification:
         iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
         print(
             f"Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes."
-        )
+        )"""

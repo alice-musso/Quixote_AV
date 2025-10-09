@@ -7,6 +7,7 @@ import re
 from collections import Counter
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import unicodedata
 
 
 # ------------------------------------------------------------------------
@@ -16,8 +17,6 @@ import nltk
 from nltk.corpus import stopwords
 
 from src.data_preparation.segmentation import Segmentator
-
-
 
 
 def get_spanish_function_words():
@@ -42,10 +41,11 @@ class Book:
         author, title = path.stem.split('-')
         raw_text = path.read_text(encoding='utf8', errors='ignore')
         clean_text = self._clean_text(raw_text)
+        author_normalized = self._normalize_author(author)
 
         self.path = path
         self.title = title.strip()
-        self.author = author.strip()
+        self.author = author_normalized
         self.raw_text = raw_text
         self.clean_text = clean_text
         self.processed = None
@@ -53,14 +53,17 @@ class Book:
 
     def _clean_text(self, text):
         """Clean and normalize text content."""
-        print('REMINDER: check clean text')
         # text = text.lower()
-        text = re.sub(r'\{[^{}]*\}', '', text)
-        text = re.sub(r'\*[^**]*\*', '', text)
-        text = re.sub(r'<\w>(.*?)</\w>', r'\1', text)
         text = text.replace('\x00', '')
         return text.strip()
 
+    def _normalize_author(self, author):
+        author = author.strip()
+        author_normalized = ''.join(
+            c for c in unicodedata.normalize('NFKD', author)
+            if not unicodedata.combining(c)
+        )
+        return author_normalized
 
     def __repr__(self):
         return f'({self.author}) "{self.title}"'
@@ -147,6 +150,7 @@ def load_corpus(path: str):
 
 def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
     for book in corpus:
+        #print(f'{book.author} -> {positive_author}')
         if book.author != positive_author:
             book.author = 'Not' + positive_author
     return corpus

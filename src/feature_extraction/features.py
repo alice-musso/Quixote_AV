@@ -1,6 +1,6 @@
 from joblib import Parallel, delayed
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-# from oversampling.dro import DistributionalRandomOversampling
+# from .oversampling.dro import DistributionalRandomOversampling
 from scipy.sparse import hstack, csr_matrix, issparse
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.preprocessing import Normalizer
@@ -11,7 +11,7 @@ from nltk import ngrams
 from string import punctuation
 sp_punctuation = punctuation + '¡¿'
 
-from oversampling.dro import DistributionalRandomOversampling
+#from oversampling.dro import DistributionalRandomOversampling
 
 
 # from dro import DistributionalRandomOversampling
