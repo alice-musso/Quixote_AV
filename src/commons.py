@@ -4,7 +4,9 @@ import spacy
 from sklearn.base import BaseEstimator, clone
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedGroupKFold, GridSearchCV, LeaveOneGroupOut
+from sklearn.model_selection import (StratifiedGroupKFold,
+                                     GridSearchCV,
+                                     LeaveOneGroupOut)
 from sklearn.metrics import (
     f1_score, 
     accuracy_score,
@@ -15,6 +17,8 @@ from sklearn.metrics import (
 import csv
 import time
 from pathlib import Path
+
+from torch.backends.cudnn import flags
 
 from data_preparation.data_loader import (binarize_corpus,
                                             load_corpus,
@@ -36,17 +40,38 @@ from feature_extraction.features import (
 import warnings
 warnings.filterwarnings("ignore")
 
-import time
+import pandas as pd
+import os
 
-QUIXOTE_DOCUMENTS = [
-    'Avellaneda - Quijote apocrifo',
-    'Avellaneda - Quijote apocrifo nucleo',
-    'Avellaneda - Quijote apocrifo prologo',
-    'Avellaneda - Quijote apocrifo prima novelle',
-    'Avellaneda - Quijote apocrifo seconda novelle',
-    'Cervantes - Don Quijote I',
-    'Cervantes - Don Quijote II'
-]
+# ----------------------------------------------
+# Save results
+# ----------------------------------------------
+
+class SaveResults:
+
+    def __init__(self, config: "ModelConfig"):
+        self.config = config
+        self.df = pd.DataFrame(columns=["booktitle",
+                                        "author",
+                                        "predictedauthor",
+                                        "posterior_prob",
+                                        "type"])
+
+    def add_result(self, booktitle, author, predictedauthor, posterior_prob, type):
+        new_row = {
+            "booktitle": booktitle,
+            "author": author,
+            "predictedauthor": predictedauthor,
+            "posterior_prob": posterior_prob,
+            "type": type
+        }
+        self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
+
+    def save(self):
+        results_path = self.config.results_filename
+        os.makedirs(os.path.dirname(results_path), exist_ok=True)
+        self.df.to_csv(results_path, index=False)
+        print(f"Results salved in {results_path}")
 
 
 # ----------------------------------------------
@@ -60,103 +85,30 @@ class AuthorshipVerification:
         self.nlp = nlp
         self.cls = None
 
-    """def loo_multiple_test_split( self, test_index: int, test_indexes, X: List[str], y: List[int],
-        doc: str, ylabel: int, filenames: List[str],) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
-
-        doc_name = filenames[test_index]
-        print(f"Test document: {doc_name[:-2]}")
-
-        X_test = [doc]
-        y_test = [int(ylabel)]
-        X_dev = list(np.delete(X, test_indexes))
-        y_dev = list(np.delete(y, test_indexes))
-        groups_dev = list(np.delete(filenames, test_indexes))
-
-        return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name]
-
-    def loo_split(self, i: int, X: List[str], y: List[int], doc: str,
-        ylabel: int, filenames: List[str]) -> Tuple[List[str], List[str], List[int], List[int], List[str], List[str]]:
-
-        doc_name = filenames[i]
-        print(f"Test document: {doc_name[:-2]}")
-
-        X_test = [doc]
-        y_test = [int(ylabel)]
-        X_dev = list(np.delete(X, i))
-        y_dev = list(np.delete(y, i))
-        groups_dev = list(np.delete(filenames, i))
-
-        return X_dev, X_test, y_dev, y_test, groups_dev, [doc_name]"""
-
-    """def find_segment(self, segment: str, processed_document: spacy.tokens.Doc
-    ) -> spacy.tokens.Span:
-        Find a segment within a processed document
-        segment = sent_tokenize(segment)[0]
-        start_segment = (
-            segment  # segment.replace('\n',' ').replace('  ', ' ').replace('\t', ' ')
-        )
-        start_idx = processed_document.text.find(start_segment)
-        end_idx = start_idx + len(segment)
-
-        if start_idx == -1:
-            print("mismatch found:::")
-            print("SEGMENT:", start_segment)
-            print("PROCESSED:", processed_document.text)
-
-        processed_seg = processed_document.char_span(
-            start_idx, end_idx, alignment_mode="expand"
-        )
-        if not processed_seg:
-            processed_seg = processed_document.char_span(
-                start_idx, end_idx - 1, alignment_mode="expand"
-            )
-
-        return processed_seg
-
-    def get_processed_segments( self, processed_docs: Dict[str, spacy.tokens.Doc], X: List[str], groups: List[str],
-        dataset: str = "") -> List[Union[spacy.tokens.Doc, spacy.tokens.Span]]:
-        Extract processed segments from documents
-        # print(f'Extracting processed {dataset} segments...')
-
-        none_count = 0
-        processed_X = []
-
-        for segment, group in tqdm(zip(X, groups), total=len(X), desc="Progress"):
-            if group.endswith("_0_0"):  # entire doc
-                processed_doc = processed_docs[group[:-4]]
-                processed_X.append(processed_doc)
-            else:  # segment
-                group_idx = group.find("_0")
-                group_key = group[:group_idx]
-                ent_doc_processed = processed_docs[group_key]
-                processed_segment = self.find_segment(segment, ent_doc_processed)
-
-                if not processed_segment:
-                    none_count += 1
-                processed_X.append(processed_segment)
-
-        print(f"None count: {none_count}\n")
-        return processed_X"""
-
     def feature_extraction_fit(self, processed_docs: List[spacy.tokens.Doc], y: List[str]):
 
         spanish_function_words = get_spanish_function_words()
 
         vectorizers = [
             FeaturesFunctionWords(
-                function_words=spanish_function_words, ngram_range=(1, 1)
+                function_words=spanish_function_words,
+                ngram_range=(1, 1)
             ),
             FeatureSetReductor(
-                FeaturesPOST(n=(1, 3)), max_features=self.config.max_features
+                FeaturesPOST(n=(1, 3)),
+                max_features=self.config.max_features
             ),
             FeaturesMendenhall(upto=27),
             FeaturesSentenceLength(),
             FeatureSetReductor(
-                FeaturesDistortedView(method="DVEX", function_words=spanish_function_words), max_features=self.config.max_features
+                FeaturesDistortedView(method="DVEX",
+                                      function_words=spanish_function_words),
+                max_features=self.config.max_features
             ),
             FeaturesPunctuation(),
             FeatureSetReductor(
-                FeaturesDEP(n=(2, 3), use_words=True), max_features=self.config.max_features
+                FeaturesDEP(n=(2, 3), use_words=True),
+                max_features=self.config.max_features
             ),
         ]
 
@@ -232,8 +184,8 @@ class AuthorshipVerification:
         # else:
         #     return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
 
-    """def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
-        Helper method to compute feature set indices
+    def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
+        """Helper method to compute feature set indices"""
         start_idx = 0
         end_idx = 0
         feature_sets_idxs = {}
@@ -250,183 +202,7 @@ class AuthorshipVerification:
             feature_sets_idxs[vect] = (start_idx, end_idx)
             start_idx = end_idx
 
-        return feature_sets_idxs"""
-
-    """def train_model(self, X_dev: np.ndarray, y_dev: List[str], groups_dev: List[str],
-        model: BaseEstimator, model_name: str) -> BaseEstimator:
-
-        param_grid = {"C": np.logspace(-4, 4, 9), "class_weight": ["balanced", None]}
-
-        cv = StratifiedGroupKFold(
-            n_splits=5, shuffle=True, random_state=self.config.random_state
-        )
-
-        if self.config.positive_author is None:
-            scoring_method = make_scorer(f1_score, average="macro", zero_division=1)
-        else:
-            scoring_method = make_scorer(f1_score, zero_division=1)
-
-        grid_search = GridSearchCV(
-            model,
-            param_grid=param_grid,
-            refit=False,
-            cv=cv,
-            n_jobs=self.config.n_jobs,
-            scoring=scoring_method,
-            verbose=True,
-        )
-
-        grid_search.fit(X_dev, y_dev, groups=groups_dev)
-        print(f"Model fitted. Best params: {grid_search.best_params_}")
-        print(f"Best scores: {grid_search.best_score_}\n")
-
-        h = LogisticRegression(**grid_search.best_params_)
-
-        h1 = CalibratedClassifierCV(h, n_jobs=self.config.n_jobs).fit(X_dev, y_dev)
-
-        return h1"""
-
-    def evaluate_model(self, clf: BaseEstimator,X_test: np.ndarray, y_test: List[str],return_proba: bool = True,
-    ) -> Tuple[float, float, np.ndarray, float, Optional[str]]:
-
-        # print('Evaluating performance...(on fragmented text)' if len(y_test) > 110 else '\n')
-
-        y_test = np.array(y_test * X_test.shape[0])
-        y_pred = clf.predict(X_test)
-        y_pred_list = y_pred.tolist()
-
-        predicted_author = None
-        if self.config.multiclass and len(y_pred) > 0:
-            single_pred = y_pred[0]
-            predicted_author = self.id_to_author.get(
-                single_pred, f"Unknown_{single_pred}"
-            )
-            print(f"Predicted author: {predicted_author}")
-
-        if return_proba:
-            probabilities = clf.predict_proba(X_test)
-            self.posterior_proba = np.median(
-                [prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)]
-            )
-            proba_values = [
-                prob[class_idx] for prob, class_idx in zip(probabilities, y_pred)
-            ]
-            print(f"Posterior probability: {self.posterior_proba}")
-            print(f"Posterior probability vector: {probabilities}")
-
-        self.accuracy = accuracy_score(y_test, y_pred)
-
-        if self.config.multiclass:
-            f1 = f1_score(y_test, y_pred, average="macro", zero_division=1.0)
-            precision, recall, _, _ = precision_recall_fscore_support(
-                y_test, y_pred, average="macro", zero_division=1.0
-            )
-            # print(f'Precision (macro): {precision}')
-            # print(f'Recall (macro): {recall}')
-            # print(f'F1 (macro): {f1}')
-
-            if self.config.multiclass and self.id_to_author:
-                unique_test_classes = sorted(set(y_test))
-                target_names = [
-                    self.id_to_author[i]
-                    for i in unique_test_classes
-                    if i in self.id_to_author
-                ]
-
-                print(f"\nPer-class metrics:")
-                print(f"Classes in test data: {unique_test_classes}")
-                print(f"Corresponding target names: {target_names}")
-
-                # print(classification_report(
-                # y_test, y_pred,
-                # labels=unique_test_classes,
-                # target_names=target_names,
-                # zero_division=1.0
-            # ))
-            # else:
-            # print(classification_report(y_test, y_pred_list, zero_division=1.0))
-        else:
-
-            f1 = f1_score(y_test, y_pred, average="binary", zero_division=1.0)
-            precision, recall, _, _ = precision_recall_fscore_support(
-                y_test, y_pred, average="binary", zero_division=1.0
-            )
-            # print(f'Precision: {precision}')
-            # print(f'Recall: {recall}')
-        # print(f'F1: {f1}')
-        # print(classification_report(y_test, y_pred, zero_division=1.0))
-
-        # print(f'Accuracy: {self.accuracy}')
-
-        cf = confusion_matrix(y_test, y_pred)
-        if not self.config.multiclass:
-            cf = cf.ravel()
-            print(f"\nConfusion matrix: (tn, fp, fn, tp)\n{cf}\n")
-        else:
-            print(f"\nConfusion matrix:\n{cf}\n")
-
-        # print(f"Random seed: {self.config.random_state}")
-
-        return self.accuracy, f1, cf, self.posterior_proba, predicted_author
-
-    def save_results(
-        self,
-        target_author: str,
-        accuracy: float,
-        f1: float,
-        posterior_proba: float,
-        model_name: str,
-        doc_name: str,
-        features: List[str],
-        file_name: str,
-        path_name: str,
-        y_test: List[int],
-        predicted_author: Optional[str] = None,
-    ):
-
-        path = Path(path_name)
-        print(f"Saving results in {file_name}\n")
-
-        if self.config.multiclass:
-            unique_test_classes = sorted(set(y_test))
-            target_names = [
-                self.id_to_author[i]
-                for i in unique_test_classes
-                if i in self.id_to_author
-            ]
-
-            target_info = (
-                str(target_names).replace("[", "").replace("]", "").replace("'", "")
-            )
-
-        else:
-            target_info = target_author
-
-        if self.config.multiclass:
-            classification_type = "multiclass"
-        else:
-            classification_type = "binary"
-
-        data = {
-            "Classification Type": classification_type,
-            "Target author": target_info,
-            "Predicted author": predicted_author if predicted_author else "N/A",
-            "Document test": doc_name[:-2],
-            "Accuracy": accuracy,
-            "Proba": posterior_proba,
-            "Features": features,
-        }
-
-        output_path = path / file_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=data.keys())
-            if f.tell() == 0:
-                writer.writeheader()
-            writer.writerow(data)
-
-        print(f"{model_name} results for author {target_author} saved in {file_name}\n")
+        return feature_sets_idxs
 
     def fit(self, train_documents: List[Book]):
 
@@ -495,48 +271,95 @@ class AuthorshipVerification:
         labels = []
         groups = []
         titles = []
+        segment_flags = []
+
         for i, book in enumerate(train_documents):
             label = book.author
             texts.append(book.processed)
             labels.append(label)
             groups.append(i)
             titles.append(book.title)
+            segment_flags.append("full_book")
             for segment in book.segmented:
                 texts.append(segment)
                 labels.append(label)
                 groups.append(i)
                 titles.append(book.title)
+                segment_flags.append("segment")
 
         X, y = self.feature_extraction_fit(texts, labels)
 
         loo = LeaveOneGroupOut()
+        saver = SaveResults(self.config, results_path=self.config.results_loo) \
+            if self.config.save_res else None
+
+        #todo: vedere se ha senso 
+
         for train_index, test_index in loo.split(X, y, groups):
+
             Xtr, ytr = X[train_index], y[train_index]
             Xte, yte = X[test_index],  y[test_index]
+
             cls_clone = clone(self.cls)
             cls_clone.fit(Xtr, ytr)
-            predictions = cls_clone.predict(Xte)
-            book_prediction = predictions[0]
-            book_label = yte[0]
-            book_title = titles[test_index[0]]
-            # if book_label!=book_prediction:
-            #     print(f'error in "{book_title}": {book_label=}, {book_prediction=}')
 
-            print(f'prediction "{book_title}": {book_label=}, {book_prediction=} '
-                  f'[{"error" if book_prediction!=book_label else "OK"}]')
+            predictions = cls_clone.predict(Xte)
+            posteriors = cls_clone.predict_proba(Xte)
+
+            for idx in range(len(test_index)):
+                book_prediction = predictions[idx]
+                book_label = yte[idx]
+                book_title = titles[test_index[idx]]
+                pred_idx = self.index_of_author(book_prediction)
+                posterior_prob = posteriors[idx][pred_idx]
+                flag = segment_flags[test_index[idx]]
+
+            #print(f'prediction "{book_title}": {book_label=}, {book_prediction=} '
+                  #f'[{"error" if book_prediction!=book_label else "OK"}]')
+
+            if saver is not None:
+                saver.add_result(
+                    booktitle=book_title,
+                    author=book_label,
+                    predictedauthor=book_prediction,
+                    posterior_prob=posterior_prob,
+                    type= flag
+                )
+
+        if saver is not None:
+            saver.save()
 
 
     def predict(self, test_corpus: List[Book], return_posteriors=False):
 
         texts = [book.processed for book in test_corpus]
         labels = [book.author for book in test_corpus]
+        titles = [book.title for book in test_corpus]
 
         X = self.feature_extraction_transform(texts)
 
         y_predicted = self.cls.predict(X)
+
         if return_posteriors:
             posteriors = self.cls.predict_proba(X)
+
+            if self.config.save_res:
+                saver = SaveResults(self.config)
+                for title, author, pred_author, posterior in zip(
+                        titles, labels, y_predicted, posteriors
+                ):
+                    pred_idx = self.index_of_author(pred_author)
+                    saver.add_result(
+                        booktitle=title,
+                        author=author,
+                        predictedauthor=pred_author,
+                        posterior_prob=posterior[pred_idx],
+                        type="full book"
+                    )
+                saver.save()
+
             return y_predicted, posteriors
+
         else:
             return y_predicted
 
@@ -546,12 +369,6 @@ class AuthorshipVerification:
 
     def index_of_author(self, author):
         return self.classes.tolist().index(author)
-
-
-
-
-
-
 
         filenames = [book.path.name for book in test_corpus]
         processed_documents = [book.processed for book in test_corpus]
@@ -567,194 +384,4 @@ class AuthorshipVerification:
             'prediction': y_pred,
             'feature_sets_idxs': feature_sets_idxs
         }
-
-
-
         return results
-
-
-    """def run(self, target: str, test_documents: Union[str, List[str]]):
-        Run the complete authorship verification process
-        start_time = time.time()
-        print(f'Start time: {time.strftime("%H:%M")}')
-
-        if isinstance(test_documents, str):
-            test_documents = [test_documents]
-
-        if self.config.multiclass:
-            print(f"Building multiclass model for all authors.\n")
-        else:
-            print(f"Building binary LOO model for author {target}.\n")
-
-        corpus = load_corpus(path=self.config.corpus_path, nlp=self.nlp)
-
-        documents = [ book.clean_text for book in corpus]
-        processed_documents = [ book.processed for book in corpus]
-        segmented = [ book.segmented for book in corpus]
-        authors = [book.author for book in corpus]
-        filenames = [book.path.name for book in corpus]
-        genres = [ "Trattato" if "epistola" not in filename.lower() else "Epistola"
-                   for filename in filenames]
-
-        print(f"Available filenames: {filenames}")
-
-        print(f"Genres: {np.unique(genres, return_counts=True)}")
-
-        y = binarize_corpus(corpus, target) if not self.config.multiclass else authors
-
-        print(f"Label distribution: {np.unique(y, return_counts=True)}")
-
-        if test_documents:
-            test_indices = []
-            for test_document in test_documents:
-                test_document_normalized = test_document.strip()
-                for test_idx, filename in enumerate(filenames):
-                    filename_normalized = filename.strip()
-                    if test_document_normalized in filename_normalized:
-                        test_indices.append(test_idx)
-
-                # print(f'Testing on: {test_documents}')
-                # print(f'Found test indices: {test_indices}')
-                if not test_indices:
-                    print(
-                        f'ERROR: Test document "{test_documents}" not found in available filenames'
-                    )
-                    print(f"Available filenames: {filenames}")
-                    return
-        else:
-            test_indices = list(range(len(documents)))
-            if self.config.multiclass:
-                print(
-                    f"Full LOO evaluation: testing on all {len(test_indices)} documents (multiclass)"
-                )
-            else:
-                print(
-                    f"Full LOO evaluation: testing on all {len(test_indices)} documents (binary classification for {target})"
-                )
-
-        print(f"Total documents to test: {len(test_indices)}")
-
-        for test_idx in test_indices:
-            print(f"=== Processing document {test_idx + 1}/{len(test_indices)} ===")
-
-            self.train_and_test_single_document(
-                test_idx,
-                test_indices,
-                documents,
-                y,
-                processed_documents,
-                filenames,
-                target,
-                self.config.save_results,
-                self.config.results_filename,
-                self.config.results_path,
-                experiment_type=self.config.experiment,
-            )
-
-        total_time = round((time.time() - start_time) / 60, 2)
-        if self.config.multiclass:
-            print(
-                f"Total time spent for multiclass model building: {total_time} minutes."
-            )
-        else:
-            print(
-                f"Total time spent for model building for author {target}: {total_time} minutes."
-            )
-
-    def train_and_test_single_document(self, test_idx: int, test_indexes: List[int], documents: List[str],
-        y: List[int], processed_documents: Dict[str, spacy.tokens.Doc], filenames: List[str], target: str,
-        save_results: bool, file_name: str, path_name: str, experiment_type: str):
-        Process a single document for authorship verification
-        start_time_single_iteration = time.time()
-        np.random.seed(self.config.random_state)
-
-        doc, ylabel = documents[test_idx], y[test_idx]
-
-       #SPLIT PER LA LOO
-        if experiment_type == "single-test":
-            X_dev, X_test, y_dev, y_test, groups_dev, groups_test = self.loo_split(
-                test_idx, documents, y, doc, ylabel, filenames
-            )
-        elif experiment_type == "multiple-test":
-            X_dev, X_test, y_dev, y_test, groups_dev, groups_test = (
-                self.loo_multiple_test_split(
-                    test_idx, test_indexes, documents, y, doc, ylabel, filenames
-                )
-            )
-        else:
-            raise NotImplementedError("not yet implemented")
-
-
-        (
-            X_dev,
-            X_test,
-            y_dev,
-            y_test,
-            X_test_frag,
-            y_test_frag,
-            groups_dev,
-            groups_test,
-            groups_test_frag,
-        ) = self.segment_data(X_dev, X_test, y_dev, y_test, groups_dev, groups_test)
-        print(np.unique(y, return_counts=True))
-
-        X_dev_processed = self.get_processed_segments(
-            processed_documents, X_dev, groups_dev, dataset="training"
-        )
-        X_test_processed = self.get_processed_segments(
-            processed_documents, X_test, groups_test, dataset="test"
-        )
-
-        X_len = len(X_dev_processed)
-        print(f"X_len: {X_len}")
-
-        #estrae i vettori
-        (X_dev,
-            X_test,
-            y_dev,
-            y_test,
-            groups_dev,
-            feature_idxs,
-            original_feature_idxs,
-            original_X_dev,
-            original_X_test,
-            orig_y_dev,
-            orig_groups_dev,
-        ) = self.feature_extraction_fit(
-            X_dev_processed, X_test_processed, y_dev, y_test, groups_dev
-        )
-
-        #costruisce il modello
-
-        model = LogisticRegression(
-            random_state=self.config.random_state,
-            n_jobs=self.config.n_jobs,
-        )
-        print(f"\nBuilding classifier...\n")
-        clf = self.train_model(X_dev, y_dev, groups_dev, model, "LogisticRegression")
-
-        acc, f1, cf, posterior_proba, predicted_author = self.evaluate_model(
-            clf, X_test, y_test
-        )
-
-        doc_name = groups_test[0][:-2] if groups_test else f"doc_{test_idx}"
-
-        if save_results:
-            self.save_results(
-                target,
-                acc,
-                f1,
-                posterior_proba,
-                model,
-                groups_test[0][:-2],
-                feature_idxs.keys(),
-                file_name,
-                path_name,
-                y_test,
-                predicted_author,
-            )
-
-        iteration_time = round((time.time() - start_time_single_iteration) / 60, 2)
-        print(
-            f"Time spent for model building for document {groups_test[0][:-2]}: {iteration_time} minutes."
-        )"""

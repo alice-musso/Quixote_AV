@@ -11,7 +11,7 @@ import nltk
 #nltk.download('stopwords')
 
 
-from commons import AuthorshipVerification, QUIXOTE_DOCUMENTS
+from commons import AuthorshipVerification
 from data_preparation.data_loader import load_corpus, binarize_corpus
 
 warnings.filterwarnings("ignore")
@@ -29,6 +29,7 @@ class ModelConfig:
     rebalance_ratio: float = 0.2
     save_res: bool = True
     results_filename: str = 'results.csv'
+    results_loo:str = 'results_loo.csv'
 
     @classmethod
     def from_args(cls):
@@ -41,6 +42,8 @@ class ModelConfig:
                              'otherwise assumes multiclass classification')
         parser.add_argument('--results-filename', default='../results/inference_results.csv',
                     help='Filename for saving results')
+        parser.add_argument('--results-loo', default='../results/loo_results.csv',
+                            help='Filename for saving results of the leave one out')
 
         args = parser.parse_args()
 
@@ -52,6 +55,7 @@ class ModelConfig:
         config.test_dir = args.test_dir
         config.positive_author = args.positive_author
         config.results_filename = args.results_filename
+        config.results_loo = args.results_loo
 
         parent_dir = Path(args.results_filename).parent
         if parent_dir:
