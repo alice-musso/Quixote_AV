@@ -48,14 +48,20 @@ import os
 # ----------------------------------------------
 
 class SaveResults:
+    def __init__(self, config: "ModelConfig", mode: str = "inference"):
+        """
+        if mode is "inference", the file is saved in config.results_inference,
+        if mode is "loo", the file is saved in config.results_loo
+        mode is specified in the class AuthorshipVerification
+        """
+        if mode not in ("inference", "loo"):
+            raise ValueError("mode must be 'inference' or 'loo'")
 
-    def __init__(self, config: "ModelConfig"):
         self.config = config
-        self.df = pd.DataFrame(columns=["booktitle",
-                                        "author",
-                                        "predictedauthor",
-                                        "posterior_prob",
-                                        "type"])
+        self.mode = mode
+        self.df = pd.DataFrame(columns=[
+            "booktitle", "author", "predictedauthor", "posterior_prob", "type"
+        ])
 
     def add_result(self, booktitle, author, predictedauthor, posterior_prob, type):
         new_row = {
@@ -68,10 +74,12 @@ class SaveResults:
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
 
     def save(self):
-        results_path = self.config.results_filename
-        os.makedirs(os.path.dirname(results_path), exist_ok=True)
-        self.df.to_csv(results_path, index=False)
-        print(f"Results salved in {results_path}")
+        if self.mode == "inference":
+            result_path = self.config.results_inference
+        else:
+            result_path = self.config.results_loo
+
+        self.df.to_csv(result_path, index=False)
 
 
 # ----------------------------------------------
@@ -290,15 +298,12 @@ class AuthorshipVerification:
         X, y = self.feature_extraction_fit(texts, labels)
 
         loo = LeaveOneGroupOut()
-        saver = SaveResults(self.config, results_path=self.config.results_loo) \
-            if self.config.save_res else None
-
-        #todo: vedere se ha senso 
+        saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
 
         for train_index, test_index in loo.split(X, y, groups):
 
             Xtr, ytr = X[train_index], y[train_index]
-            Xte, yte = X[test_index],  y[test_index]
+            Xte, yte = X[test_index], y[test_index]
 
             cls_clone = clone(self.cls)
             cls_clone.fit(Xtr, ytr)
@@ -314,21 +319,17 @@ class AuthorshipVerification:
                 posterior_prob = posteriors[idx][pred_idx]
                 flag = segment_flags[test_index[idx]]
 
-            #print(f'prediction "{book_title}": {book_label=}, {book_prediction=} '
-                  #f'[{"error" if book_prediction!=book_label else "OK"}]')
-
-            if saver is not None:
-                saver.add_result(
-                    booktitle=book_title,
-                    author=book_label,
-                    predictedauthor=book_prediction,
-                    posterior_prob=posterior_prob,
-                    type= flag
-                )
+                if saver is not None:
+                    saver.add_result(
+                        booktitle=book_title,
+                        author=book_label,
+                        predictedauthor=book_prediction,
+                        posterior_prob=posterior_prob,
+                        type=flag
+                    )
 
         if saver is not None:
             saver.save()
-
 
     def predict(self, test_corpus: List[Book], return_posteriors=False):
 
@@ -343,8 +344,8 @@ class AuthorshipVerification:
         if return_posteriors:
             posteriors = self.cls.predict_proba(X)
 
-            if self.config.save_res:
-                saver = SaveResults(self.config)
+            if self.config.results_inference:
+                saver = SaveResults(self.config, mode="inference")
                 for title, author, pred_author, posterior in zip(
                         titles, labels, y_predicted, posteriors
                 ):
@@ -357,6 +358,7 @@ class AuthorshipVerification:
                         type="full book"
                     )
                 saver.save()
+            else: None
 
             return y_predicted, posteriors
 

@@ -5,10 +5,6 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 import spacy
-import nltk
-
-#nltk.download('punkt_tab')
-#nltk.download('stopwords')
 
 
 from commons import AuthorshipVerification
@@ -28,8 +24,8 @@ class ModelConfig:
     oversample: bool = False
     rebalance_ratio: float = 0.2
     save_res: bool = True
-    results_filename: str = 'results.csv'
-    results_loo:str = 'results_loo.csv'
+    results_inference: str = 'inference_results.csv'
+    results_loo:str = 'loo_results.csv'
 
     @classmethod
     def from_args(cls):
@@ -40,10 +36,10 @@ class ModelConfig:
         parser.add_argument('--positive-author', default='Cervantes',
                         help='If indicated (default: Cervantes), binarizes the corpus, '
                              'otherwise assumes multiclass classification')
-        parser.add_argument('--results-filename', default='../results/inference_results.csv',
+        parser.add_argument('--results-inference', default='../results/inference_results.csv',
                     help='Filename for saving results')
         parser.add_argument('--results-loo', default='../results/loo_results.csv',
-                            help='Filename for saving results of the leave one out')
+                            help='Filename for saving results for the leave one out whole books + segments')
 
         args = parser.parse_args()
 
@@ -54,12 +50,11 @@ class ModelConfig:
         config.train_dir = args.train_dir
         config.test_dir = args.test_dir
         config.positive_author = args.positive_author
-        config.results_filename = args.results_filename
+        config.results_inference = args.results_inference
         config.results_loo = args.results_loo
 
-        parent_dir = Path(args.results_filename).parent
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
+        for paths in [args.results_inference, args.results_loo]:
+            Path(paths).parent.mkdir(parents=True, exist_ok=True)
 
         return config
             
