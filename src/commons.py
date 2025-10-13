@@ -128,90 +128,6 @@ class AuthorshipVerification:
     def feature_extraction_transform(self, processed_docs: List[spacy.tokens.Doc]):
         return self.hstacker.transform(processed_docs)
 
-
-        # feature_sets = []
-        # feature_sets_orig = []
-        # orig_filenames = filenames.copy()
-
-        # for vectorizer in vectorizers:
-        #     reductor = FeatureSetReductor(vectorizer, keep_ratio=self.config.keep_ratio)
-        #
-        #     # print('\nProcessing set')
-        #     features_set= reductor.fit_transform(processed_docs, y)
-        #
-        #     if self.config.oversample:
-        #         feature_sets_orig.append(features_set)
-        #         orig_y = y.copy()
-        #
-        #         (
-        #             features_set,
-        #             y_oversampled,
-        #             features_set,
-        #             y_oversampled,
-        #             groups,
-        #         ) = reductor.oversample_DRO(
-        #             Xtr=features_set,
-        #             ytr=y,
-        #             groups=orig_filenames,
-        #             rebalance_ratio=self.config.rebalance_ratio,
-        #         )
-        #         feature_sets.append(features_set)
-        #     else:
-        #         feature_sets.append(features_set)
-
-        # orig_feature_sets_idxs = self._compute_feature_set_idx(
-        #     vectorizers, feature_sets_orig
-        # )
-        # feature_sets_idxs = self._compute_feature_set_idx(vectorizers, feature_sets)
-
-        # print(f'Feature sets computed: {len(feature_sets_dev)}')
-        # print('\nStacking feature vectors')
-
-        # if feature_sets_orig:
-        #     X_stacked_orig = hstacker._hstack(feature_sets_orig)
-            # print(f'X_dev_stacked_orig shape: {X_dev_stacked_orig.shape}')
-            # print(f'X_test_stacked_orig shape: {X_test_stacked_orig.shape}')
-
-        # X_stacked = hstacker._hstack(feature_sets)
-
-        # print(f'X_dev_stacked shape: {X_dev_stacked.shape}')
-        # print(f'X_test_stacked shape: {X_test_stacked.shape}')
-
-        # y_final = y_oversampled if self.config.oversample else y
-
-        #print("Feature vectors extracted.")
-        #print(f"Vector document final shape: {X_dev_stacked.shape}")
-        #print(f"X_dev_stacked: {X_dev_stacked.shape[0]}")
-        #print(f"y_dev: {len(y_dev_final)}")
-        #print(f"groups_dev: {len(groups_dev)}")
-        #print(f"groups_dev_orig: {len(orig_groups_dev)}")
-
-        # if self.config.oversample:
-        #     return (X_stacked, y_final, filenames, feature_sets_idxs,
-        #         orig_feature_sets_idxs, X_stacked_orig, orig_y, orig_filenames)
-        # else:
-        #     return (X_stacked, y, filenames, feature_sets_idxs, None, None, None, None)
-
-    def _compute_feature_set_idx(self, vectorizers, feature_sets_dev):
-        """Helper method to compute feature set indices"""
-        start_idx = 0
-        end_idx = 0
-        feature_sets_idxs = {}
-
-        for vect, fset in zip(vectorizers, feature_sets_dev):
-            if isinstance(fset, list):
-                fset = np.array(fset)
-
-            if len(fset.shape) == 1:
-                fset = fset.reshape(-1, 1)
-
-            feature_shape = fset.shape[1]
-            end_idx += feature_shape
-            feature_sets_idxs[vect] = (start_idx, end_idx)
-            start_idx = end_idx
-
-        return feature_sets_idxs
-
     def fit(self, train_documents: List[Book]):
 
         texts = []
@@ -330,6 +246,7 @@ class AuthorshipVerification:
 
         if saver is not None:
             saver.save()
+
 
     def predict(self, test_corpus: List[Book], return_posteriors=False):
 

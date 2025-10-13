@@ -36,9 +36,9 @@ class ModelConfig:
         parser.add_argument('--positive-author', default='Cervantes',
                         help='If indicated (default: Cervantes), binarizes the corpus, '
                              'otherwise assumes multiclass classification')
-        parser.add_argument('--results-inference', default='../results/inference_results.csv',
+        parser.add_argument('--results-inference', default='../results/inference/results.csv',
                     help='Filename for saving results')
-        parser.add_argument('--results-loo', default='../results/loo_results.csv',
+        parser.add_argument('--results-loo', default='../results/loo/results.csv',
                             help='Filename for saving results for the leave one out whole books + segments')
 
         args = parser.parse_args()
@@ -50,8 +50,12 @@ class ModelConfig:
         config.train_dir = args.train_dir
         config.test_dir = args.test_dir
         config.positive_author = args.positive_author
-        config.results_inference = args.results_inference
-        config.results_loo = args.results_loo
+
+        inference_path = Path(args.results_inference)
+        config.results_inference = str(inference_path.parent / f"results_{config.positive_author}.csv")
+
+        loo_path = Path(args.results_loo)
+        config.results_loo = str(loo_path.parent / f"loo_results_{config.positive_author}.csv")
 
         for paths in [args.results_inference, args.results_loo]:
             Path(paths).parent.mkdir(parents=True, exist_ok=True)
