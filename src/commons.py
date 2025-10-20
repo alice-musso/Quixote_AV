@@ -50,37 +50,101 @@ import os
 class SaveResults:
     def __init__(self, config: "ModelConfig", mode: str = "inference"):
         """
-        if mode is "inference", the file is saved in config.results_inference,
-        if mode is "loo", the file is saved in config.results_loo
-        mode is specified in the class AuthorshipVerification
+        Handles saving results for both inference and leave-one-out (LOO) modes.
+
+        - In 'inference' mode: saves basic predictions (no metrics)
+        - In 'loo' mode: saves predictions + evaluation metrics (accuracy, f1, confusion matrix)
         """
         if mode not in ("inference", "loo"):
             raise ValueError("mode must be 'inference' or 'loo'")
 
         self.config = config
         self.mode = mode
-        self.df = pd.DataFrame(columns=[
-            "booktitle", "author", "predictedauthor", "posterior_prob", "type"
-        ])
 
-    def add_result(self, booktitle, author, predictedauthor, posterior_prob, type):
+        # Columns depend on the mode
+        if mode == "loo":
+            columns = [
+                "booktitle", "author", "predictedauthor", "posterior_prob", "type",
+                "accuracy", "f1", "TP", "TN", "FP", "FN"
+            ]
+        else:  # inference mode
+            columns = [
+                "booktitle", "author", "predictedauthor", "posterior_prob", "type"
+            ]
+
+        self.df = pd.DataFrame(columns=columns)
+
+    def add_result(
+        self,
+        booktitle,
+        author,
+        predictedauthor,
+        posterior_prob,
+        type,
+        accuracy=None,
+        f1=None,
+        TP=None,
+        FN=None,
+    ):
+        """
+        Add a single prediction result (with optional metrics).
+        """
         new_row = {
             "booktitle": booktitle,
             "author": author,
             "predictedauthor": predictedauthor,
             "posterior_prob": posterior_prob,
-            "type": type
+            "type": type,
         }
+
+        # Add metrics only in LOO mode)
+        if self.mode == "loo":
+            new_row.update({
+                "accuracy": accuracy,
+                "f1": f1,
+                "TP": TP,
+                "FN": FN
+            })
+
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
 
     def save(self):
-        if self.mode == "inference":
-            result_path = self.config.results_inference
-        else:
-            result_path = self.config.results_loo
-
+        """Save the accumulated results to the appropriate CSV file."""
+        result_path = (
+            self.config.results_inference
+            if self.mode == "inference"
+            else self.config.results_loo
+        )
         self.df.to_csv(result_path, index=False)
 
+# ----------------------------------------------
+# Evaluate Binary model
+# ----------------------------------------------
+
+class   ModelEvaluator:
+
+    def __init__(self, config: "ModelConfig"):
+        """
+        evaluator for binary model, confusion matrix not yet implemented
+        """
+        self.config = config
+    
+    def evaluate_model(self, y:list, y_pred:list):
+
+        acc = accuracy_score(y, y_pred)
+        f1 = f1_score(y, y_pred, average='binary', pos_label= self.config.positive_author, zero_division=1)
+
+        labels_in_fold = np.unique(y)
+        #cm = confusion_matrix(y, y_pred, labels=labels_in_fold)
+
+        #tn, fp, fn, tp = cm.ravel()
+        return (acc,
+                f1,
+                #tn,
+                #fp,
+                #fn,
+                #tp
+                )
 
 # ----------------------------------------------
 # Model
@@ -188,14 +252,9 @@ class AuthorshipVerification:
         print('[done]')
 
     def leave_one_out(self, train_documents: List[Book]):
-
         assert self.cls is not None, 'leave_one_out called before fit!'
 
-        texts = []
-        labels = []
-        groups = []
-        titles = []
-        segment_flags = []
+        texts, labels, groups, titles, segment_flags = [], [], [], [], []
 
         for i, book in enumerate(train_documents):
             label = book.author
@@ -204,6 +263,7 @@ class AuthorshipVerification:
             groups.append(i)
             titles.append(book.title)
             segment_flags.append("full_book")
+
             for segment in book.segmented:
                 texts.append(segment)
                 labels.append(label)
@@ -214,10 +274,11 @@ class AuthorshipVerification:
         X, y = self.feature_extraction_fit(texts, labels)
 
         loo = LeaveOneGroupOut()
+
         saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
+        evaluator = ModelEvaluator(self.config)
 
         for train_index, test_index in loo.split(X, y, groups):
-
             Xtr, ytr = X[train_index], y[train_index]
             Xte, yte = X[test_index], y[test_index]
 
@@ -235,13 +296,21 @@ class AuthorshipVerification:
                 posterior_prob = posteriors[idx][pred_idx]
                 flag = segment_flags[test_index[idx]]
 
+
+                (acc, f1, #tn, #fn, #tn,#tp, #fp
+                    ) = evaluator.evaluate_model([book_label], [book_prediction])
+
                 if saver is not None:
                     saver.add_result(
-                        booktitle=book_title,
-                        author=book_label,
-                        predictedauthor=book_prediction,
-                        posterior_prob=posterior_prob,
-                        type=flag
+                    booktitle=book_title,
+                    author=book_label,
+                    predictedauthor=book_prediction,
+                    posterior_prob=posterior_prob,
+                    type=flag,
+                    accuracy=acc,
+                    f1=f1,
+                    #TP=tp,
+                    #FN=fn
                     )
 
         if saver is not None:
