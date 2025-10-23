@@ -84,6 +84,8 @@ class SaveResults:
         accuracy=None,
         f1=None,
         TP=None,
+        TN=None,
+        FP = None,
         FN=None,
     ):
         """
@@ -103,7 +105,9 @@ class SaveResults:
                 "accuracy": accuracy,
                 "f1": f1,
                 "TP": TP,
-                "FN": FN
+                "TN": TN,
+                "FP": FP,
+                "FN": FN,
             })
 
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
@@ -118,7 +122,7 @@ class SaveResults:
         self.df.to_csv(result_path, index=False)
 
 # ----------------------------------------------
-# Evaluate Binary model
+# Evaluate model
 # ----------------------------------------------
 
 class   ModelEvaluator:
@@ -128,23 +132,21 @@ class   ModelEvaluator:
         evaluator for binary model, confusion matrix not yet implemented
         """
         self.config = config
-    
-    def evaluate_model(self, y:list, y_pred:list):
+
+    def evaluate (self, y:list, y_pred:list):
+
+        pos_label = self.config.positive_author
+        neg_label = f"Not{pos_label}"
+        labels = pos_label, neg_label
 
         acc = accuracy_score(y, y_pred)
-        f1 = f1_score(y, y_pred, average='binary', pos_label= self.config.positive_author, zero_division=1)
+        f1 = f1_score(y, y_pred, average='binary', pos_label=pos_label, zero_division=1)
 
-        labels_in_fold = np.unique(y)
-        #cm = confusion_matrix(y, y_pred, labels=labels_in_fold)
+        cm = confusion_matrix(y, y_pred, labels=labels)
+        tn, fp, fn, tp = cm.ravel()
 
-        #tn, fp, fn, tp = cm.ravel()
-        return (acc,
-                f1,
-                #tn,
-                #fp,
-                #fn,
-                #tp
-                )
+        return acc, f1, tp, tn, fp, fn
+
 
 # ----------------------------------------------
 # Model
@@ -255,6 +257,10 @@ class AuthorshipVerification:
         assert self.cls is not None, 'leave_one_out called before fit!'
 
         texts, labels, groups, titles, segment_flags = [], [], [], [], []
+        segment_prediction= {}
+
+        saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
+        evaluator = ModelEvaluator(self.config)
 
         for i, book in enumerate(train_documents):
             label = book.author
@@ -275,9 +281,6 @@ class AuthorshipVerification:
 
         loo = LeaveOneGroupOut()
 
-        saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
-        evaluator = ModelEvaluator(self.config)
-
         for train_index, test_index in loo.split(X, y, groups):
             Xtr, ytr = X[train_index], y[train_index]
             Xte, yte = X[test_index], y[test_index]
@@ -296,21 +299,38 @@ class AuthorshipVerification:
                 posterior_prob = posteriors[idx][pred_idx]
                 flag = segment_flags[test_index[idx]]
 
+                acc = f1 = tp = tn = fp = fn = None
 
-                (acc, f1, #tn, #fn, #tn,#tp, #fp
-                    ) = evaluator.evaluate_model([book_label], [book_prediction])
+                if flag == "segment":
+                    if book_title not in segment_prediction:
+                        segment_prediction[book_title] = {"y": [], "y_pred": []}
+
+                    segment_prediction[book_title]["y"].append(book_label)
+                    segment_prediction[book_title]["y_pred"].append(book_prediction)
+
+                    acc, f1, tp, tn, fp, fn = evaluator.evaluate([book_label], [book_prediction])
+
+                elif flag == "full_book":
+                    for book in segment_prediction:
+                        y = segment_prediction[book]["y"]
+                        y_pred = segment_prediction[book]["y_pred"]
+                        acc, f1, tp, tn, fp, fn = evaluator.evaluate(y, y_pred)
+
+
 
                 if saver is not None:
                     saver.add_result(
-                    booktitle=book_title,
-                    author=book_label,
-                    predictedauthor=book_prediction,
-                    posterior_prob=posterior_prob,
-                    type=flag,
-                    accuracy=acc,
-                    f1=f1,
-                    #TP=tp,
-                    #FN=fn
+                        booktitle=book_title,
+                        author=book_label,
+                        predictedauthor=book_prediction,
+                        posterior_prob=posterior_prob,
+                        type=flag,
+                        accuracy=acc,
+                        f1=f1,
+                        TP=tp,
+                        TN=tn,
+                        FP=fp,
+                        FN=fn,
                     )
 
         if saver is not None:
