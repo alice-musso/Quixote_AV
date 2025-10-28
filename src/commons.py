@@ -312,11 +312,9 @@ class AuthorshipVerification:
 
                 elif flag == "full_book":
                     for book in segment_prediction:
-                        y = segment_prediction[book]["y"]
+                        y_true = segment_prediction[book]["y"]
                         y_pred = segment_prediction[book]["y_pred"]
-                        acc, f1, tp, tn, fp, fn = evaluator.evaluate(y, y_pred)
-
-
+                        acc, f1, tp, tn, fp, fn = evaluator.evaluate(y_true, y_pred)
 
                 if saver is not None:
                     saver.add_result(
