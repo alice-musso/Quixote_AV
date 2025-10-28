@@ -3,10 +3,12 @@ import numpy as np
 import spacy
 from sklearn.base import BaseEstimator, clone
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import (LogisticRegression)
 from sklearn.model_selection import (StratifiedGroupKFold,
                                      GridSearchCV,
-                                     LeaveOneGroupOut)
+                                     LeaveOneGroupOut,
+                                     )
+from sklearn.svm import LinearSVC
 from sklearn.metrics import (
     f1_score, 
     accuracy_score,
@@ -212,12 +214,21 @@ class AuthorshipVerification:
         X, y = self.feature_extraction_fit(texts, labels)
 
         # model selection
-        print(f"Building classifier: model selection\n")
+        classifier_type = getattr(self.config, "classifier_type", "lr")
+        print(f"Building classifier: {classifier_type}\n")
+
+        if classifier_type == "lr":
+            base_estimator = LogisticRegression(random_state=self.config.random_state,
+                                                n_jobs=self.config.n_jobs)
+
+        elif classifier_type == "svm":
+            base_estimator = LinearSVC(random_state=self.config.random_state)
+
+        else:
+            raise ValueError(f"Unsupported classifier type: {classifier_type}")
+
         mod_selection = GridSearchCV(
-            estimator=LogisticRegression(
-                random_state=self.config.random_state,
-                n_jobs=self.config.n_jobs,
-            ),
+            estimator=base_estimator,
             param_grid={
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': [None, 'balanced']
@@ -230,23 +241,30 @@ class AuthorshipVerification:
         )
         print(set([(yi,gi) for yi, gi in zip(y,groups)]))
         mod_selection.fit(X, y, groups=groups)
-        # cv_results = pd.DataFrame(mod_selection.cv_results_)
-
 
         best_params = mod_selection.best_params_
         print('best params:', mod_selection.best_params_)
         print('best score:', mod_selection.best_score_)
 
-        print(f"Building classifier: classifier calibration\n")
-        self.cls = CalibratedClassifierCV(
-            LogisticRegression(
+        print(f"\nBuilding classifier: classifier calibration ({classifier_type})\n")
+
+        if classifier_type == "lr":
+            final_estimator = LogisticRegression(
                 random_state=self.config.random_state,
                 n_jobs=self.config.n_jobs,
                 **best_params
-            ),
+            )
+        else:
+            final_estimator = LinearSVC(
+                random_state=self.config.random_state,
+                **best_params
+            )
+
+        self.cls = CalibratedClassifierCV(
+            final_estimator,
             cv=10,
-            # method='isotonic',
-            method='sigmoid',
+            #method="isotonic",
+            method="sigmoid",
             n_jobs=-1
         )
         self.cls.fit(X, y)

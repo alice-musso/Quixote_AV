@@ -26,6 +26,7 @@ class ModelConfig:
     save_res: bool = True
     results_inference: str = 'inference_results.csv'
     results_loo:str = 'loo_results.csv'
+    classifier_type:str = "lr"
 
     @classmethod
     def from_args(cls):
@@ -40,6 +41,7 @@ class ModelConfig:
                     help='Filename for saving results')
         parser.add_argument('--results-loo', default='../results/loo/results.csv',
                             help='Filename for saving results for the leave one out whole books + segments')
+        parser.add_argument('--classifier-type', choices = ["lr", "svm"], default='lr')
 
         args = parser.parse_args()
 
@@ -50,12 +52,13 @@ class ModelConfig:
         config.train_dir = args.train_dir
         config.test_dir = args.test_dir
         config.positive_author = args.positive_author
+        config.classifier_type = args.classifier_type
 
         inference_path = Path(args.results_inference)
-        config.results_inference = str(inference_path.parent / f"results_{config.positive_author}.csv")
+        config.results_inference = str(inference_path.parent / f"results_{config.positive_author}_{config.classifier_type}.csv")
 
         loo_path = Path(args.results_loo)
-        config.results_loo = str(loo_path.parent / f"loo_results_{config.positive_author}.csv")
+        config.results_loo = str(loo_path.parent / f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
 
         for paths in [args.results_inference, args.results_loo]:
             Path(paths).parent.mkdir(parents=True, exist_ok=True)
@@ -64,9 +67,7 @@ class ModelConfig:
             
 
 if __name__ == '__main__':
-    #print("ENTRA")
     config = ModelConfig.from_args()
-    #print(config.positive_author)
 
 
     train_corpus = load_corpus(config.train_dir)
