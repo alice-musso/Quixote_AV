@@ -8,13 +8,18 @@ BASE_DIR=$(dirname "$0")
 TRAIN_DIR="$BASE_DIR/corpus/training"
 TEST_DIR="$BASE_DIR/corpus/test"
 
+MODEL_TYPE=(
+"svm"
+"lr"
+)
+
 AUTHORS=(
     "Mateo Alemán"
-    #"Cervantes"
-    #"Lope de Vega"
+    "Cervantes"
+    "Lope de Vega"
     #"Agustín de Rojas Villandrando"
-    #"Alonso de Castillo Solórzano"
-    #"Guillén de Castro"
+    "Alonso de Castillo Solórzano"
+    "Guillén de Castro"
     #"Juan Ruiz de Alarcón y Mendoza"
     #"Pasamonte"
     #"Pérez de Hita"
@@ -24,24 +29,23 @@ AUTHORS=(
 
 for AUTHOR in "${AUTHORS[@]}"; do
     NAME_PATH=$(echo "$AUTHOR" | iconv -t ascii//TRANSLIT | tr ' ' '_')
-    # il primo toglie gli accenti, il secondo il secondo mette gli underscore al posto dello spazio
-    echo ">>> Running inference for: $AUTHOR"
     AUTHOR_NORMALIZED=$(echo "$AUTHOR" | iconv -t ascii//TRANSLIT)
-    #no accenti
+    echo ">>> Running inference for: $AUTHOR"
 
+    for MODEL in "${MODEL_TYPE[@]}"; do
+        PYTHONPATH=.:..:src python -m src.main_inference \
+            --train-dir="$TRAIN_DIR" \
+            --test-dir="$TEST_DIR" \
+            --positive-author="$AUTHOR_NORMALIZED" \
+            --classifier-type="$MODEL" \
+            --results-inference="results/inference/inference_results_${AUTHOR_NORMALIZED}_${MODEL}.csv" \
+            --results-loo="results/loo/loo_results_${AUTHOR_NORMALIZED}_${MODEL}.csv" \
+            > "results/outputs/output_${NAME_PATH}_${MODEL}.txt"
 
-
-    PYTHONPATH=.:..:src python -m src.main_inference \
-        --train-dir="$TRAIN_DIR" \
-        --test-dir="$TEST_DIR" \
-        --positive-author="$AUTHOR_NORMALIZED" \
-        --results-inference="results/inference/inference_results_${AUTHOR_NORMALIZED}.csv" \
-        --results-loo="results/loo/loo_results_${AUTHOR_NORMALIZED}.csv" \
-        > "results/outputs/output_${NAME_PATH}.txt"
-
-    if [ ! -s "results/outputs/output_${NAME_PATH}.txt" ]; then
-        echo "Nessun documento trovato per $AUTHOR"
-    fi
+        if [ ! -s "results/outputs/output_${NAME_PATH}_${MODEL}.txt" ]; then
+            echo "Nessun documento trovato per $AUTHOR"
+        fi
+    done
 done
 
-echo "File saved in results/inference, results/loo and results/outputs  "
+echo "File saved in results/inference, results/loo and results/outputs"
