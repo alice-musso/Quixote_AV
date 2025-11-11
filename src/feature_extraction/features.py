@@ -10,6 +10,7 @@ from nltk import ngrams
 
 from string import punctuation
 sp_punctuation = punctuation + '¡¿'
+from abc import ABC, abstractmethod
 
 #from oversampling.dro import DistributionalRandomOversampling
 
@@ -17,10 +18,16 @@ sp_punctuation = punctuation + '¡¿'
 # from dro import DistributionalRandomOversampling
 
 
+class FeatureExtractorAA(ABC):
+    """
+    Abstract class of all feature extractors for authorship analysis
+    """
+    @abstractmethod
+    def num_dimensions(self):
+        ...
 
-    
 
-class FeaturesDistortedView:
+class FeaturesDistortedView(FeatureExtractorAA):
 
     def __init__(self, function_words, method, ngram_range=(1,1), **tfidf_kwargs):
         assert method in {'DVEX', 'DVMA', 'DVSA'}, 'text distortion method not valid'
@@ -41,12 +48,10 @@ class FeaturesDistortedView:
         if self.method=='DVSA':
             return 'FeaturesDVSA'+ ngram_range_str
 
-
     def fit(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
         self.vectorizer.fit(distortions)
         return self
-
 
     def transform(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
@@ -54,7 +59,6 @@ class FeaturesDistortedView:
         features = self.vectorizer.transform(distortions)
         features_num = features.shape[1]
         return features
-    
 
     def fit_transform(self, documents, y=None):
         distortions = self.distortion(documents, method=self.method)
@@ -79,8 +83,6 @@ class FeaturesDistortedView:
             self.test_words = self.counter.transform(texts)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
-
-
     # DV-MA text distortion method from Stamatatos_2018:
     # Every word not in function_words is masked by replacing each of its characters with an asterisk (*).
     # for character embedding
@@ -99,7 +101,6 @@ class FeaturesDistortedView:
             dis_texts.append(dis_text)
         return dis_texts
     
-    
     # DV-SA text distortion method from Stamatatos_2018:
     # Every word not in function_words is replaced with an asterisk (*).
     # for character embedding
@@ -117,7 +118,6 @@ class FeaturesDistortedView:
                     dis_text += '*'
             dis_texts.append(dis_text)
         return dis_texts
-    
 
     # DV-EX text distortion method from Stamatatos_2018:
     # Every word not in function_words is masked by replacing each of its characters with an asterisk (*),
@@ -134,121 +134,15 @@ class FeaturesDistortedView:
         for doc in tqdm(documents, 'DV-EX distorting', total=len(documents)):
             tokens = [str(token) for token in doc]
             dis_text = [token if token in self.function_words else DVEX(token) for token in tokens]
-            # for token in tokens:
-            #     if token in self.function_words:
-            #         dis_text.append(token)
-            #     else:
-            #         dis_text.append(DVEX(token))
             dis_texts.append(' '.join(dis_text))
 
         return dis_texts
+
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
+
     
         
-# uncomment this code if you want to test the Syllabic Quantities
-# class FeaturesSyllabicQuantities:
-#
-#     def __init__(self, min_range=1,max_range=1, ngram_range=(1,1), **tfidf_kwargs):
-#         self.tfidf_kwargs = tfidf_kwargs
-#         self.min_range = min_range
-#         self.max_range = max_range
-#         self.ngram_range = ngram_range
-#         self.vectorizer = TfidfVectorizer(ngram_range=self.ngram_range, **self.tfidf_kwargs)
-#         self.counter = CountVectorizer()
-#
-#
-#     def __str__(self) -> str:
-#         ngram_range_str = f' [n-gram range: {self.ngram_range}]'
-#         return 'FeaturesSyllabicQuantities' + ngram_range_str
-#
-#
-#     def fit(self, documents, y=None):
-#         raw_documents = [doc.text for doc in documents]
-#         scanned_texts = self.metric_scansion(documents)
-#         #self.count_syllabic_quantities(scanned_texts)
-#         #self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
-#         self.vectorizer.fit(scanned_texts)
-#         return self
-#
-#
-#     def transform(self, documents, y=None):
-#         raw_documents = [doc.text for doc in documents]
-#         scanned_texts = self.metric_scansion(documents)
-#         self.count_syllabic_quantities(scanned_texts)
-#         features = self.vectorizer.transform(scanned_texts)
-#         return features
-#
-#
-#     def fit_transform(self, documents, y=None):
-#         raw_documents = [doc.text for doc in documents]
-#         scanned_texts = self.metric_scansion(documents)
-#         self.count_syllabic_quantities(scanned_texts)
-#         # self.vectorizer = TfidfVectorizer(**self.tfidf_kwargs)
-#         features = self.vectorizer.fit_transform(scanned_texts)
-#         return features
-#
-#
-#     def metric_scansion(self, documents, filenames=None):
-#         #documents = [self.remove_invalid_word(doc, filename) for doc, filename in zip(documents, filenames)]
-#         documents = [self.remove_invalid_word(doc) for doc in documents]
-#
-#         macronizer = Macronizer('tag_ngram_123_backoff')
-#         scanner = Scansion(
-#             clausula_length=100000, punctuation=string.punctuation)  # clausula_length was 13, it didn't get the string before that point (it goes backward)
-#         macronized_texts = [macronizer.macronize_text(doc) for doc in tqdm(documents, 'macronizing', total=len(documents))]
-#         scanned_texts = [scanner.scan_text(doc) for doc in
-#                         tqdm(macronized_texts, 'metric scansion', total=len(macronized_texts))]
-#         scanned_texts = [''.join(scanned_text) for scanned_text in scanned_texts]  # concatenate the sentences
-#         return scanned_texts
-#
-#     def remove_invalid_word(self, document, filename=None):
-#         # todo: salvare i numeri romani, i numeri
-#         legal_words=[]
-#         vowels = set('aeiouāēīōū')
-#         tokens = [token.text for token in document]
-#         illegal_tokens=[]
-#
-#         for token in tokens:
-#             token = token.lstrip()
-#             if len(token) == 1:
-#                 if token.lower() in vowels or token in punctuation:
-#                     legal_words.append(token)
-#             elif len(token) == 2:
-#                 if not all(char in punctuation for char in token) and not all(char not in vowels for char in token):
-#                     legal_words.append(token)
-#             else:
-#                 if (
-#                     any(char in vowels for char in token)
-#                     and not any(
-#                         token[i] in punctuation and token[i + 1] in punctuation
-#                         for i in range(len(token) - 1)
-#                     )
-#                 ):
-#                     legal_words.append(token)
-#
-#             if token not in legal_words:
-#                 illegal_tokens.append(token)
-#
-#         if filename:
-#
-#             with open("illegal_words.txt", "a") as file:
-#                 file.write(f"{filename}\n")
-#                 file.write(f"{str(document)[:50]}\n")
-#                 file.write(f"{illegal_tokens}\n")
-#                 file.write("\n")
-#
-#
-#         return ' '.join(legal_words)
-#
-#
-#     def count_syllabic_quantities(self, texts):
-#         if not hasattr(self, 'n_training_terms'):
-#             self.training_words = self.counter.fit_transform(texts)
-#             self.n_training_terms = self.training_words.sum(axis=1).getA().flatten()
-#         else:
-#             self.test_words = self.counter.transform(texts)
-#             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
-
-
 class DummyTfidf:
 
     def __init__(self,upto, feature_type="word"):
@@ -260,7 +154,7 @@ class DummyTfidf:
         return np.array([f"{self.prefix}_{i}" for i in range(1, self.upto)])
 
 
-class FeaturesMendenhall:
+class FeaturesMendenhall(FeatureExtractorAA):
     """
     Extract features as the frequency of the words' lengths used in the documents,
     following the idea behind Mendenhall's Characteristic Curve of Composition
@@ -287,8 +181,11 @@ class FeaturesMendenhall:
     def fit_transform(self, documents, y=None):
         return self.fit(documents).transform(documents)
 
+    def num_dimensions(self):
+        return self.upto-2
 
-class FeaturesSentenceLength:
+
+class FeaturesSentenceLength(FeatureExtractorAA):
     def __init__(self, upto=1000):
         self.upto = upto
 
@@ -313,8 +210,11 @@ class FeaturesSentenceLength:
     def fit_transform(self, documents, y=None):
         return self.fit(documents).transform(documents)
 
+    def num_dimensions(self):
+        return self.upto-2
 
-class FeaturesCharNGram:
+
+class FeaturesCharNGram(FeatureExtractorAA):
 
     def __init__(self, n=(1,3), sublinear_tf=False, norm='l1'):
         self.n = n
@@ -351,8 +251,11 @@ class FeaturesCharNGram:
             self.test_ngrams = self.counter.transform(texts)
             self.n_test_terms = self.test_ngrams.sum(axis=1).getA().flatten()
 
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
 
-class FeaturesFunctionWords:
+
+class FeaturesFunctionWords(FeatureExtractorAA):
 
     def __init__(self, function_words, use_idf=False, sublinear_tf=False, norm='l1', ngram_range=(1,3)):
         self.use_idf = use_idf
@@ -393,8 +296,11 @@ class FeaturesFunctionWords:
             self.test_words = self.counter.transform(texts)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
 
-class FeaturesVerbalEndings:
+
+class FeaturesVerbalEndings(FeatureExtractorAA):
 
     def __init__(self, verbal_endings, n=(1,1), extract_longest_match=False, use_idf=True, sublinear_tf=True, norm='l2', **tfidf_kwargs):
         self.use_idf = use_idf
@@ -456,9 +362,12 @@ class FeaturesVerbalEndings:
             self.test_words = self.counter.transform(documents)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
+
         
 
-class FeaturesPunctuation:
+class FeaturesPunctuation(FeatureExtractorAA):
 
     def __init__(self, sublinear_tf=False, norm='l1', ngram_range=(1,3)):
         self.sublinear_tf = sublinear_tf
@@ -495,8 +404,11 @@ class FeaturesPunctuation:
             self.test_words = self.counter.transform(texts)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
 
-class FeaturesPOST:
+
+class FeaturesPOST(FeatureExtractorAA):
     def __init__(self, n=(1,4), use_idf=True, sublinear_tf=True, norm='l2', savecache='.postcache/dict.pkl', **tfidf_kwargs):
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
@@ -507,10 +419,8 @@ class FeaturesPOST:
         self.counter = CountVectorizer(analyzer=self.post_analyzer)
         self.vectorizer = TfidfVectorizer(analyzer=self.post_analyzer, use_idf=self.use_idf, sublinear_tf=self.sublinear_tf, norm=self.norm, **self.tfidf_kwargs)
     
-
     def __str__(self) -> str:
         return f'FeaturesPOST [n-gram range: ({self.n[0]},{self.n[1]})]'
-
 
     def post_analyzer(self, doc):
         ngram_range = self.tfidf_kwargs.get('ngram_range', (self.n)) # up to quadrigrams
@@ -523,7 +433,6 @@ class FeaturesPOST:
                 sentence_ngram_tags = ['-'.join(ngram) for ngram in list(ngrams(sentence_unigram_tags, n))]
                 ngram_tags.extend(sentence_ngram_tags)
         return ngram_tags
-
 
     def fit(self, documents, y=None):
         self.count_pos_tags(documents)
@@ -547,9 +456,12 @@ class FeaturesPOST:
         else:
             self.test_words = self.counter.transform(documents)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
-    
 
-class FeaturesDEP:
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
+
+
+class FeaturesDEP(FeatureExtractorAA):
     def __init__(self, n=(1,3), use_idf=True, sublinear_tf=True, norm='l2', savecache='.depcache/dict.pkl', use_words= False, **tfidf_kwargs):
         self.use_idf = use_idf
         self.sublinear_tf = sublinear_tf
@@ -613,10 +525,13 @@ class FeaturesDEP:
             self.test_words = self.counter.transform(documents)
             self.n_test_terms = self.test_words.sum(axis=1).getA().flatten()
 
-    
-class FeatureSetReductor:
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
 
-    def __init__(self, feature_extractor, measure=chi2, max_features=5000, normalize=True, oversample=False):
+
+class FeatureSetReductor(FeatureExtractorAA):
+
+    def __init__(self, feature_extractor:FeatureExtractorAA, measure=chi2, max_features=5000, normalize=True, oversample=False):
         self.feature_extractor = feature_extractor
         self.max_features = max_features
         self.measure = measure
@@ -633,7 +548,6 @@ class FeatureSetReductor:
 
     def transform(self, X):
         matrix = self.feature_extractor.transform(X)
-
         matrix = self.feature_selector.transform(matrix)
         if self.normalize:
             matrix  = self.normalizer.transform(matrix)
@@ -722,26 +636,18 @@ class FeatureSetReductor:
 
         return Xtr, ytr, Xte, yte, groups_oversampled
 
+    def num_dimensions(self):
+        return min(self.max_features, self.feature_extractor.num_dimensions())
 
-class HstackFeatureSet:
+
+class HstackFeatureSet(FeatureExtractorAA):
     def __init__(self, *vectorizers, verbose=False):
         self.vectorizers = vectorizers
         self.verbose = verbose
 
-    # def fit(self, documents, authors=None):
-    #     for v in self.vectorizers:
-    #         v.fit(documents, authors)
-    #     return self
-
     def transform(self, documents):
         feats = [v.transform(documents) for v in self.vectorizers]
         return self._hstack(feats)
-
-    # def transform(self, documents):
-    #     feats = Parallel(n_jobs=4)(
-    #         delayed(v.transform)(documents) for v in self.vectorizers
-    #     )
-    #     return self._hstack(feats)
 
     def fit_transform(self, documents, authors=None):
         feats = []
@@ -757,24 +663,6 @@ class HstackFeatureSet:
             print(f'final matrix has shape={X.shape}')
         return X
 
-    # def fit_transform(self, documents, authors=None):
-    #     def _process(vectorizer):
-    #         if self.verbose:
-    #             print(f'extracting features with {vectorizer}')
-    #         Xi = vectorizer.fit_transform(documents, authors)
-    #         if self.verbose:
-    #             print(f'\textracted {Xi.shape[1]} features')
-    #         return Xi
-    #
-    #     feats = Parallel(n_jobs=4)(
-    #         delayed(_process)(vectorizer) for vectorizer in self.vectorizers
-    #     )
-    #
-    #     X = self._hstack(feats)
-    #     if self.verbose:
-    #         print(f'final matrix has shape={X.shape}')
-    #     return X
-
     def _hstack(self, feats):
         for i, f in enumerate(feats):
             if not issparse(f):
@@ -788,3 +676,16 @@ class HstackFeatureSet:
         else:
             feats = np.hstack(feats)
         return feats
+
+    def num_dimensions(self):
+        return sum([v.num_dimensions() for v in self.vectorizers])
+
+    def get_feature_slices(self):
+        from_ = 0
+        slices = []
+        for vect in self.vectorizers:
+            to_ = from_ + vect.num_dimensions()
+            s = slice(from_, to_)
+            slices.append(s)
+            from_ = to_
+        return slices

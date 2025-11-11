@@ -39,6 +39,8 @@ from feature_extraction.features import (
         HstackFeatureSet,
 )
 
+from learner import ClassifierRange
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -127,7 +129,7 @@ class SaveResults:
 # Evaluate model
 # ----------------------------------------------
 
-class   ModelEvaluator:
+class ModelEvaluator:
 
     def __init__(self, config: "ModelConfig"):
         """
@@ -164,33 +166,40 @@ class AuthorshipVerification:
 
         spanish_function_words = get_spanish_function_words()
 
-        vectorizers = [
-            FeaturesFunctionWords(
+        # 1.- restituire quelle che c'erano
+        # 2.- aggiungere tutte quelle che Martina aveva scartato
+
+        vectorizers_dict = {
+            'feat_funct_words': FeaturesFunctionWords(
                 function_words=spanish_function_words,
                 ngram_range=(1, 1)
             ),
-            FeatureSetReductor(
-                FeaturesPOST(n=(1, 3)),
-                max_features=self.config.max_features
-            ),
-            FeaturesMendenhall(upto=27),
-            FeaturesSentenceLength(),
-            FeatureSetReductor(
-                FeaturesDistortedView(method="DVEX",
-                                      function_words=spanish_function_words),
-                max_features=self.config.max_features
-            ),
-            FeaturesPunctuation(),
-            FeatureSetReductor(
-                FeaturesDEP(n=(2, 3), use_words=True),
-                max_features=self.config.max_features
-            ),
-        ]
+            # 'feat_post': FeatureSetReductor(
+            #     FeaturesPOST(n=(1, 3)),
+            #     max_features=self.config.max_features
+            # ),
+            'feat_mendenhall': FeaturesMendenhall(upto=27),
+            # 'feat_sentlength': FeaturesSentenceLength(),
+            # 'feat_dvex': FeatureSetReductor(
+            #     FeaturesDistortedView(method="DVEX",
+            #                           function_words=spanish_function_words),
+            #     max_features=self.config.max_features
+            # ),
+            # 'feat_punct': FeaturesPunctuation(),
+            # 'feat_dep': FeatureSetReductor(
+            #     FeaturesDEP(n=(2, 3), use_words=True),
+            #     max_features=self.config.max_features
+            # ),
+        }
+
+        names, vectorizers = list(zip(*vectorizers_dict.items()))
 
         self.hstacker = HstackFeatureSet(*vectorizers, verbose=True)
         X = self.hstacker.fit_transform(processed_docs, y)
         y = np.asarray(y)
-        return X, y
+        slices = self.hstacker.get_feature_slices()
+        slices_dict = {name_: slice_ for name_,slice_ in zip(names, slices)}
+        return X, y, slices_dict
 
     def feature_extraction_transform(self, processed_docs: List[spacy.tokens.Doc]):
         return self.hstacker.transform(processed_docs)
@@ -210,27 +219,30 @@ class AuthorshipVerification:
                 labels.append(label)
                 groups.append(i)
 
-        X, y = self.feature_extraction_fit(texts, labels)
+        X, y, slices = self.feature_extraction_fit(texts, labels)
 
         # model selection
         classifier_type = getattr(self.config, "classifier_type", "lr")
         print(f"Building classifier: {classifier_type}\n")
 
         if classifier_type == "lr":
-            base_estimator = LogisticRegression(random_state=self.config.random_state,
-                                                n_jobs=self.config.n_jobs)
-
+            base_estimator = LogisticRegression(random_state=self.config.random_state, n_jobs=self.config.n_jobs)
         elif classifier_type == "svm":
             base_estimator = LinearSVC(random_state=self.config.random_state)
-
         else:
             raise ValueError(f"Unsupported classifier type: {classifier_type}")
 
+        cls_range = ClassifierRange(base_cls=base_estimator)
+
         mod_selection = GridSearchCV(
-            estimator=base_estimator,
+            estimator=cls_range,
             param_grid={
                 'C': np.logspace(-4, 4, 9),
-                'class_weight': [None, 'balanced']
+                'class_weight': [None, 'balanced'],
+                'feat_funct_words': [None, slices['feat_funct_words']],
+                # 'feat_post': [None, slices['feat_post']], <-- restituire
+                'feat_mendenhall': [None, slices['feat_mendenhall']],
+                # <-- aggiungere tutte le features qua
             },
             cv=LeaveOneGroupOut(),
             refit=False,
@@ -247,29 +259,20 @@ class AuthorshipVerification:
 
         print(f"\nBuilding classifier: classifier calibration ({classifier_type})\n")
 
-        if classifier_type == "lr":
-            final_estimator = LogisticRegression(
-                random_state=self.config.random_state,
-                n_jobs=self.config.n_jobs,
-                **best_params
-            )
-        else:
-            final_estimator = LinearSVC(
-                random_state=self.config.random_state,
-                **best_params
-            )
+        cls_optim = clone(cls_range)
+        cls_optim.set_params(**best_params)
 
         self.cls = CalibratedClassifierCV(
-            final_estimator,
+            cls_optim,
             cv=10,
             #method="isotonic",
             method="sigmoid",
-            n_jobs=-1
+            n_jobs=-1,
         )
 
         self.cls.fit(X, y)
-
         print('[done]')
+        return self
 
     def leave_one_out(self, train_documents: List[Book]):
         assert self.cls is not None, 'leave_one_out called before fit!'
@@ -295,7 +298,7 @@ class AuthorshipVerification:
                 titles.append(book.title)
                 segment_flags.append("segment")
 
-        X, y = self.feature_extraction_fit(texts, labels)
+        X, y, _ = self.feature_extraction_fit(texts, labels)
 
         loo = LeaveOneGroupOut()
 
