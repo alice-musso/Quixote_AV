@@ -67,7 +67,7 @@ class SaveResults:
         if mode == "loo":
             columns = [
                 "booktitle", "author", "predictedauthor", "posterior_prob", "type",
-                "accuracy", "f1", "TP", "TN", "FP", "FN"
+                "accuracy", "f1", "TN", "FP", "FN", "TP"
             ]
         else:  # inference mode
             columns = [
@@ -85,10 +85,10 @@ class SaveResults:
         type,
         accuracy=None,
         f1=None,
-        TP=None,
         TN=None,
-        FP = None,
-        FN=None,
+        FP=None,
+        FN = None,
+        TP=None,
     ):
         """
         Add a single prediction result (with optional metrics).
@@ -106,10 +106,10 @@ class SaveResults:
             new_row.update({
                 "accuracy": accuracy,
                 "f1": f1,
-                "TP": TP,
                 "TN": TN,
                 "FP": FP,
                 "FN": FN,
+                "TP": TP,
             })
 
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
@@ -139,15 +139,14 @@ class   ModelEvaluator:
 
         pos_label = self.config.positive_author
         neg_label = f"Not{pos_label}"
-        labels = pos_label, neg_label
+        labels = neg_label, pos_label
 
         acc = accuracy_score(y, y_pred)
-        f1 = f1_score(y, y_pred, average='binary', pos_label=pos_label, zero_division=1)
 
         cm = confusion_matrix(y, y_pred, labels=labels)
         tn, fp, fn, tp = cm.ravel()
 
-        return acc, f1, tp, tn, fp, fn
+        return acc, tn, fp, fn, tp
 
 
 # ----------------------------------------------
@@ -267,6 +266,7 @@ class AuthorshipVerification:
             method="sigmoid",
             n_jobs=-1
         )
+
         self.cls.fit(X, y)
 
         print('[done]')
@@ -274,7 +274,7 @@ class AuthorshipVerification:
     def leave_one_out(self, train_documents: List[Book]):
         assert self.cls is not None, 'leave_one_out called before fit!'
 
-        texts, labels, groups, titles, segment_flags = [], [], [], [], []
+        texts, labels, groups, titles, segment_flags, agg_y_true, agg_y_pred = [], [], [], [], [], [], []
         segment_prediction= {}
 
         saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
@@ -317,22 +317,26 @@ class AuthorshipVerification:
                 posterior_prob = posteriors[idx][pred_idx]
                 flag = segment_flags[test_index[idx]]
 
-                acc = f1 = tp = tn = fp = fn = None
+                acc = tn = fp = fn = tp = None
 
                 if flag == "segment":
+                    agg_y_true.append(book_label)
+                    agg_y_pred.append(book_prediction)
+
                     if book_title not in segment_prediction:
                         segment_prediction[book_title] = {"y": [], "y_pred": []}
 
                     segment_prediction[book_title]["y"].append(book_label)
                     segment_prediction[book_title]["y_pred"].append(book_prediction)
 
-                    acc, f1, tp, tn, fp, fn = evaluator.evaluate([book_label], [book_prediction])
+                    acc, tn, fp, fn, tp = evaluator.evaluate([book_label], [book_prediction])
 
                 elif flag == "full_book":
                     for book in segment_prediction:
                         y_true = segment_prediction[book]["y"]
                         y_pred = segment_prediction[book]["y_pred"]
-                        acc, f1, tp, tn, fp, fn = evaluator.evaluate(y_true, y_pred)
+                        acc, tn, fp, fn, tp = evaluator.evaluate(y_true, y_pred)
+
 
                 if saver is not None:
                     saver.add_result(
@@ -342,11 +346,11 @@ class AuthorshipVerification:
                         posterior_prob=posterior_prob,
                         type=flag,
                         accuracy=acc,
-                        f1=f1,
-                        TP=tp,
+                        f1 = None,
                         TN=tn,
                         FP=fp,
                         FN=fn,
+                        TP=tp,
                     )
 
         if saver is not None:
@@ -393,19 +397,3 @@ class AuthorshipVerification:
 
     def index_of_author(self, author):
         return self.classes.tolist().index(author)
-
-        filenames = [book.path.name for book in test_corpus]
-        processed_documents = [book.processed for book in test_corpus]
-
-        (X_stacked, y, filenames, feature_sets_idxs, *_) = self.feature_extraction_fit(
-        processed_documents, y, filenames)
-
-        y_pred = clf.predict(X_stacked)
-
-        results = {
-            'filenames': filenames,
-            'label': y,
-            'prediction': y_pred,
-            'feature_sets_idxs': feature_sets_idxs
-        }
-        return results

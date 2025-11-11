@@ -289,10 +289,8 @@ class FeaturesMendenhall:
 
 
 class FeaturesSentenceLength:
-    def __init__(self, upto=1000, language='latin'):
+    def __init__(self, upto=1000):
         self.upto = upto
-        self.language = language
-        self.vectorizer = DummyTfidf(self.upto)
 
     def __str__(self) -> str:
         return 'FeaturesSentenceLength'
@@ -661,7 +659,7 @@ class FeatureSetReductor:
         return matrix
     
     def oversample_DRO(self, Xtr, ytr, Xte, yte, groups=None, rebalance_ratio=0.2, test_samples=100):
-        raise NotImplementedError('overasmple not yet implemented')
+        raise NotImplementedError('oversample not yet implemented')
 
         if not isinstance(ytr, np.ndarray):
             ytr = np.array(ytr)
