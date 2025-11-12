@@ -11,15 +11,23 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
                  C=1,
                  class_weight=None,
                  feat_funct_words=None,
-                 # feat_post=None, <-- restituire
-                 feat_mendenhall=None
-                 # ... <-- aggiungere tutte con nome feat_<qualcosa>
+                 feat_post=None,
+                 feat_mendenhall=None,
+                 feat_dvex=None,
+                 feat_char=None,
+                 feat_punct=None,
+                 feat_dep=None,
+                 feat_sentlength=None
     ):
         self.base_cls = base_cls
         self.feat_funct_words = feat_funct_words
-        # self.feat_post = feat_post <--restituire
+        self.feat_post = feat_post
         self.feat_mendenhall = feat_mendenhall
-        # ... <-- aggiungere tutte
+        self.feat_dvex = feat_dvex
+        self.feat_char = feat_char
+        self.feat_punct = feat_punct
+        self.feat_dep= feat_dep
+        self.feat_sentlength = feat_sentlength
         self.C = C
         self.class_weight = class_weight
 

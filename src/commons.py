@@ -42,6 +42,9 @@ from feature_extraction.features import (
 from learner import ClassifierRange
 
 import warnings
+
+from src.feature_extraction.features import FeaturesCharNGram
+
 warnings.filterwarnings("ignore")
 
 import pandas as pd
@@ -174,22 +177,25 @@ class AuthorshipVerification:
                 function_words=spanish_function_words,
                 ngram_range=(1, 1)
             ),
-            # 'feat_post': FeatureSetReductor(
-            #     FeaturesPOST(n=(1, 3)),
-            #     max_features=self.config.max_features
-            # ),
+            'feat_post': FeatureSetReductor(
+                 FeaturesPOST(n=(1, 3)),
+                 max_features=self.config.max_features
+            ),
             'feat_mendenhall': FeaturesMendenhall(upto=27),
-            # 'feat_sentlength': FeaturesSentenceLength(),
-            # 'feat_dvex': FeatureSetReductor(
-            #     FeaturesDistortedView(method="DVEX",
-            #                           function_words=spanish_function_words),
-            #     max_features=self.config.max_features
-            # ),
-            # 'feat_punct': FeaturesPunctuation(),
-            # 'feat_dep': FeatureSetReductor(
-            #     FeaturesDEP(n=(2, 3), use_words=True),
-            #     max_features=self.config.max_features
-            # ),
+            'feat_sentlength': FeaturesSentenceLength(),
+            'feat_dvex': FeatureSetReductor(
+                 FeaturesDistortedView(method="DVEX",
+                                      function_words=spanish_function_words),
+                max_features=self.config.max_features
+            ),
+            'feat_punct': FeaturesPunctuation(),
+            'feat_dep': FeatureSetReductor(
+                 FeaturesDEP(n=(2, 3), use_words=True),
+                 max_features=self.config.max_features
+            ),
+            'feat_char': FeatureSetReductor(
+                FeaturesCharNGram(n=(1,3))
+            )
         }
 
         names, vectorizers = list(zip(*vectorizers_dict.items()))
@@ -240,9 +246,13 @@ class AuthorshipVerification:
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': [None, 'balanced'],
                 'feat_funct_words': [None, slices['feat_funct_words']],
-                # 'feat_post': [None, slices['feat_post']], <-- restituire
+                'feat_post': [None, slices['feat_post']],
                 'feat_mendenhall': [None, slices['feat_mendenhall']],
-                # <-- aggiungere tutte le features qua
+                'feat_sentlength': [None, slices['feat_sentlength']],
+                'feat_dvex': [None, slices['feat_dvex']],
+                'feat_punct': [None, slices['feat_punct']],
+                'feat_dep': [None, slices['feat_dep']],
+                'feat_char': [None, slices['feat_char']],
             },
             cv=LeaveOneGroupOut(),
             refit=False,
@@ -277,7 +287,7 @@ class AuthorshipVerification:
     def leave_one_out(self, train_documents: List[Book]):
         assert self.cls is not None, 'leave_one_out called before fit!'
 
-        texts, labels, groups, titles, segment_flags, agg_y_true, agg_y_pred = [], [], [], [], [], [], []
+        texts, labels, groups, titles, segment_flags = [], [], [], [], []
         segment_prediction= {}
 
         saver = SaveResults(self.config, mode="loo") if self.config.results_loo else None
@@ -323,9 +333,6 @@ class AuthorshipVerification:
                 acc = tn = fp = fn = tp = None
 
                 if flag == "segment":
-                    agg_y_true.append(book_label)
-                    agg_y_pred.append(book_prediction)
-
                     if book_title not in segment_prediction:
                         segment_prediction[book_title] = {"y": [], "y_pred": []}
 
