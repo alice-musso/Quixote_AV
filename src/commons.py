@@ -71,18 +71,19 @@ class SaveResults:
         # Columns depend on the mode
         if mode == "loo":
             columns = [
-                "booktitle", "author", "predictedauthor", "posterior_prob", "type",
+                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type",
                 "accuracy", "f1", "TN", "FP", "FN", "TP"
             ]
         else:  # inference mode
             columns = [
-                "booktitle", "author", "predictedauthor", "posterior_prob", "type"
+                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type"
             ]
 
         self.df = pd.DataFrame(columns=columns)
 
     def add_result(
         self,
+        best_params,
         booktitle,
         author,
         predictedauthor,
@@ -99,6 +100,7 @@ class SaveResults:
         Add a single prediction result (with optional metrics).
         """
         new_row = {
+            "best_params": best_params,
             "booktitle": booktitle,
             "author": author,
             "predictedauthor": predictedauthor,
@@ -164,6 +166,7 @@ class AuthorshipVerification:
         self.config = config
         self.nlp = nlp
         self.cls = None
+        self.best_params = None
 
     def feature_extraction_fit(self, processed_docs: List[spacy.tokens.Doc], y: List[str]):
 
@@ -263,6 +266,7 @@ class AuthorshipVerification:
         print(set([(yi,gi) for yi, gi in zip(y,groups)]))
         mod_selection.fit(X, y, groups=groups)
 
+        self.best_params = mod_selection.best_params_
         best_params = mod_selection.best_params_
         print('best params:', mod_selection.best_params_)
         print('best score:', mod_selection.best_score_)
@@ -350,6 +354,7 @@ class AuthorshipVerification:
 
                 if saver is not None:
                     saver.add_result(
+                        best_params = self.best_params,
                         booktitle=book_title,
                         author=book_label,
                         predictedauthor=book_prediction,
@@ -387,6 +392,7 @@ class AuthorshipVerification:
                 ):
                     pred_idx = self.index_of_author(pred_author)
                     saver.add_result(
+                        best_params= self.best_params,
                         booktitle=title,
                         author=author,
                         predictedauthor=pred_author,
