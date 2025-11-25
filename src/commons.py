@@ -72,33 +72,30 @@ class SaveResults:
         if mode == "loo":
             columns = [
                 "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type",
-                "accuracy", "f1", "TN", "FP", "FN", "TP"
+                "accuracy", "TN", "FP", "FN", "TP"
             ]
-        else:  # inference mode
+        elif mode == "inference":  # inference mode
             columns = [
-                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type"
+                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "best_score", "type"
             ]
 
         self.df = pd.DataFrame(columns=columns)
 
     def add_result(
-        self,
-        best_params,
-        booktitle,
-        author,
-        predictedauthor,
-        posterior_prob,
-        type,
-        accuracy=None,
-        f1=None,
-        TN=None,
-        FP=None,
-        FN = None,
-        TP=None,
+            self,
+            best_params,
+            booktitle,
+            author,
+            predictedauthor,
+            posterior_prob,
+            type,
+            accuracy=None,
+            best_score=None,
+            TN=None,
+            FP=None,
+            FN=None,
+            TP=None,
     ):
-        """
-        Add a single prediction result (with optional metrics).
-        """
         new_row = {
             "best_params": best_params,
             "booktitle": booktitle,
@@ -108,16 +105,17 @@ class SaveResults:
             "type": type,
         }
 
-        # Add metrics only in LOO mode)
         if self.mode == "loo":
             new_row.update({
                 "accuracy": accuracy,
-                "f1": f1,
                 "TN": TN,
                 "FP": FP,
                 "FN": FN,
                 "TP": TP,
             })
+
+        elif self.mode == "inference":
+            new_row["best_score"] = best_score
 
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
 
@@ -167,13 +165,11 @@ class AuthorshipVerification:
         self.nlp = nlp
         self.cls = None
         self.best_params = None
+        self.best_score = None
 
     def feature_extraction_fit(self, processed_docs: List[spacy.tokens.Doc], y: List[str]):
 
         spanish_function_words = get_spanish_function_words()
-
-        # 1.- restituire quelle che c'erano
-        # 2.- aggiungere tutte quelle che Martina aveva scartato
 
         vectorizers_dict = {
             'feat_funct_words': FeaturesFunctionWords(
@@ -268,6 +264,7 @@ class AuthorshipVerification:
 
         self.best_params = mod_selection.best_params_
         best_params = mod_selection.best_params_
+        self.best_score = mod_selection.best_score_
         print('best params:', mod_selection.best_params_)
         print('best score:', mod_selection.best_score_)
 
@@ -361,7 +358,6 @@ class AuthorshipVerification:
                         posterior_prob=posterior_prob,
                         type=flag,
                         accuracy=acc,
-                        f1 = None,
                         TN=tn,
                         FP=fp,
                         FN=fn,
@@ -393,6 +389,7 @@ class AuthorshipVerification:
                     pred_idx = self.index_of_author(pred_author)
                     saver.add_result(
                         best_params= self.best_params,
+                        best_score = self.best_score,
                         booktitle=title,
                         author=author,
                         predictedauthor=pred_author,
