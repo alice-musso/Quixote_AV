@@ -37,6 +37,7 @@ from feature_extraction.features import (
         FeaturesDEP,
         FeaturesPunctuation,
         HstackFeatureSet,
+        FeaturesFrequentWords
 )
 
 from learner import ClassifierRange
@@ -194,7 +195,8 @@ class AuthorshipVerification:
             ),
             'feat_char': FeatureSetReductor(
                 FeaturesCharNGram(n=(1,3))
-            )
+            ),
+            "feat_k_freq_words": FeaturesFrequentWords()
         }
 
         names, vectorizers = list(zip(*vectorizers_dict.items()))
@@ -252,6 +254,7 @@ class AuthorshipVerification:
                 'feat_punct': [None, slices['feat_punct']],
                 'feat_dep': [None, slices['feat_dep']],
                 'feat_char': [None, slices['feat_char']],
+                'feat_k_freq_words': [None, slices['feat_k_freq_words']],
             },
             cv=LeaveOneGroupOut(),
             refit=False,
@@ -393,7 +396,7 @@ class AuthorshipVerification:
                         booktitle=title,
                         author=author,
                         predictedauthor=pred_author,
-                        posterior_prob=posterior[pred_idx],
+                        posterior_prob=posterior[self.config.positive_author],
                         type="full book"
                     )
                 saver.save()

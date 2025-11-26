@@ -17,7 +17,8 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
                  feat_char=None,
                  feat_punct=None,
                  feat_dep=None,
-                 feat_sentlength=None
+                 feat_sentlength=None,
+                 feat_k_freq_words=None
     ):
         self.base_cls = base_cls
         self.feat_funct_words = feat_funct_words
@@ -28,6 +29,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         self.feat_punct = feat_punct
         self.feat_dep= feat_dep
         self.feat_sentlength = feat_sentlength
+        self.feat_k_freq_words = feat_k_freq_words
         self.C = C
         self.class_weight = class_weight
 

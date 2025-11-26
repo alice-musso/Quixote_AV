@@ -26,6 +26,35 @@ class FeatureExtractorAA(ABC):
     def num_dimensions(self):
         ...
 
+class FeaturesFrequentWords(FeatureExtractorAA):
+
+    def __init__(self, max_features=3000, ngram_range=(1, 1), analyzer='word', norm='l2', use_idf=True, smooth_idf=True,
+                 sublinear_tf=True):
+
+        self.vectorizer = TfidfVectorizer(analyzer=analyzer, ngram_range=ngram_range, max_features=max_features,
+                                          dtype=np.float64, norm=norm, use_idf=use_idf, smooth_idf=smooth_idf,
+                                          sublinear_tf=sublinear_tf)
+        self.is_fitted = False
+
+    def fit(self, documents, authors=None):
+        raw_documents = [doc.text for doc in documents]
+        self.vectorizer.fit(raw_documents)
+        self.is_fitted = True
+        return self
+
+    def transform(self, documents, authors=None):
+        if not self.is_fitted:
+            raise RuntimeError()
+        raw_documents = [doc.text for doc in documents]
+        return self.vectorizer.transform(raw_documents)
+
+    def fit_transform(self, documents, authors=None):
+        self.fit(documents)
+        return self.transform(documents)
+
+    def num_dimensions(self):
+        return len(self.vectorizer.vocabulary_)
+
 
 class FeaturesDistortedView(FeatureExtractorAA):
 
@@ -241,7 +270,6 @@ class FeaturesCharNGram(FeatureExtractorAA):
         self.count_ngrams(raw_documents)
         self.vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(self.n), use_idf=False, norm=self.norm, min_df=3)
         return self.vectorizer.fit_transform(raw_documents)
-
     
     def count_ngrams(self, texts):
         if not hasattr(self, 'n_training_terms'):
