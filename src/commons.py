@@ -1,3 +1,4 @@
+import pickle
 from typing import List, Tuple, Dict, Optional, Any, Union
 import numpy as np
 import spacy
@@ -211,8 +212,7 @@ class AuthorshipVerification:
     def feature_extraction_transform(self, processed_docs: List[spacy.tokens.Doc]):
         return self.hstacker.transform(processed_docs)
 
-    def fit(self, train_documents: List[Book]):
-
+    def prepare_X_y(self, train_documents: List[Book]):
         texts = []
         labels = []
         groups = []
@@ -225,10 +225,10 @@ class AuthorshipVerification:
                 texts.append(segment)
                 labels.append(label)
                 groups.append(i)
-
         X, y, slices = self.feature_extraction_fit(texts, labels)
+        return X, y, slices, groups
 
-        # model selection
+    def prepare_classifier(self):
         classifier_type = getattr(self.config, "classifier_type", "lr")
         print(f"Building classifier: {classifier_type}\n")
 
@@ -240,6 +240,15 @@ class AuthorshipVerification:
             raise ValueError(f"Unsupported classifier type: {classifier_type}")
 
         cls_range = ClassifierRange(base_cls=base_estimator)
+        return cls_range
+
+
+    def fit(self, train_documents: List[Book], save_hyper_path:str=None):
+
+        X, y, slices, groups = self.prepare_X_y(train_documents)
+
+        # model selection
+        cls_range = self.prepare_classifier()
 
         mod_selection = GridSearchCV(
             estimator=cls_range,
@@ -271,10 +280,18 @@ class AuthorshipVerification:
         print('best params:', mod_selection.best_params_)
         print('best score:', mod_selection.best_score_)
 
-        print(f"\nBuilding classifier: classifier calibration ({classifier_type})\n")
+        if save_hyper_path is not None:
+            parent = Path(save_hyper_path).parent
+            os.makedirs(parent, exist_ok=True)
+            pickle.dump(self.best_params, open(save_hyper_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-        cls_optim = clone(cls_range)
-        cls_optim.set_params(**best_params)
+        print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+        self.create_classifier(X, y, cls_range, self.best_params)
+
+
+    def create_classifier(self, X, y, cls:BaseEstimator, hyperparams:dict):
+        cls_optim = clone(cls)
+        cls_optim.set_params(**hyperparams)
 
         self.cls = CalibratedClassifierCV(
             cls_optim,
@@ -287,6 +304,20 @@ class AuthorshipVerification:
         self.cls.fit(X, y)
         print('[done]')
         return self
+
+    def fit_with_hyperparams(self, train_documents: List[Book], hyperparams: dict):
+        X, y, slices, groups = self.prepare_X_y(train_documents)
+
+        def assert_coherent_slices(slices, hyperparams):
+            for feat, slice in hyperparams.items():
+                if slice is not None:
+                    assert slice == slices[feat], f'wrong slices for feat {feat}'
+
+        assert_coherent_slices(slices, hyperparams)
+        cls_range = self.prepare_classifier()
+        print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+        self.create_classifier(X, y, cls_range, hyperparams)
+
 
     def leave_one_out(self, train_documents: List[Book]):
         assert self.cls is not None, 'leave_one_out called before fit!'
