@@ -310,7 +310,7 @@ class AuthorshipVerification:
 
         def assert_coherent_slices(slices, hyperparams):
             for feat, slice in hyperparams.items():
-                if slice is not None:
+                if slice is not None and feat.startswith('feat'):
                     assert slice == slices[feat], f'wrong slices for feat {feat}'
 
         assert_coherent_slices(slices, hyperparams)
@@ -421,13 +421,14 @@ class AuthorshipVerification:
                         titles, labels, y_predicted, posteriors
                 ):
                     pred_idx = self.index_of_author(pred_author)
+                    positive_idx = self.index_of_author(self.config.positive_author)
                     saver.add_result(
                         best_params= self.best_params,
                         best_score = self.best_score,
                         booktitle=title,
                         author=author,
                         predictedauthor=pred_author,
-                        posterior_prob=posterior[self.config.positive_author],
+                        posterior_prob=posterior[positive_idx],
                         type="full book"
                     )
                 saver.save()

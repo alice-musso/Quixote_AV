@@ -1,4 +1,5 @@
 import os.path
+import pickle
 import sys
 import argparse
 import warnings
@@ -34,7 +35,7 @@ class ModelConfig:
         parser = argparse.ArgumentParser()
         parser.add_argument('--train-dir', default='../corpus/training')
         parser.add_argument('--test-dir', default='../corpus/test')
-        parser.add_argument('--positive-author', default='Cervantes',
+        parser.add_argument('--positive-author', default='Quevedo',
                         help='If indicated (default: Cervantes), binarizes the corpus, '
                              'otherwise assumes multiclass classification')
         parser.add_argument('--results-inference', default='../results/inference/results.csv',
@@ -79,9 +80,15 @@ if __name__ == '__main__':
 
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
-    av_system.fit(train_corpus)
 
-    av_system.leave_one_out(train_corpus)
+    if config.positive_author == "Cervantes":
+        av_system.fit(train_corpus, save_hyper_path ="hyperparameters_posauth_Cervantes.pkl")
+    else:
+        with open("hyperparameters_posauth_Cervantes.pkl", "rb") as f:
+            hyperparams = pickle.load(f)
+        av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+
+    #av_system.leave_one_out(train_corpus)
 
     predicted_authors, posteriors = av_system.predict(test_corpus, return_posteriors=True)
 

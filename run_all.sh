@@ -5,26 +5,29 @@ mkdir -p results/inference
 mkdir -p results/loo
 
 BASE_DIR=$(dirname "$0")
+BASE_DIR=$(cd "$BASE_DIR" && pwd)
+
 TRAIN_DIR="$BASE_DIR/corpus/training"
 TEST_DIR="$BASE_DIR/corpus/test"
 
 MODEL_TYPE=(
-"svm"
+#"svm"
 "lr"
 )
 
 AUTHORS=(
     "Mateo Alemán"
-    "Cervantes"
-    "Lope de Vega"
-    #"Agustín de Rojas Villandrando"
+    #"Cervantes"
+    #"Lope de Vega"
+    "Agustín de Rojas Villandrando"
     "Alonso de Castillo Solórzano"
     "Guillén de Castro"
-    #"Juan Ruiz de Alarcón y Mendoza"
+    "Juan Ruiz de Alarcón y Mendoza"
     #"Pasamonte"
-    #"Pérez de Hita"
-    #"Quevedo"
+    "Pérez de Hita"
+    "Quevedo"
     #"Tirso de Molina"
+    #"Navarrete"
 )
 
 for AUTHOR in "${AUTHORS[@]}"; do
@@ -33,19 +36,23 @@ for AUTHOR in "${AUTHORS[@]}"; do
     echo ">>> Running inference for: $AUTHOR"
 
     for MODEL in "${MODEL_TYPE[@]}"; do
-        PYTHONPATH=.:..:src python -m src.main_inference \
+        # IMPORTANTE: vai nella directory src dove si trova il file .pkl
+        cd "$BASE_DIR/src"
+
+        # Usa percorsi assoluti per train/test/results
+        PYTHONPATH="$BASE_DIR/src:$BASE_DIR" python -m main_inference \
             --train-dir="$TRAIN_DIR" \
             --test-dir="$TEST_DIR" \
             --positive-author="$AUTHOR_NORMALIZED" \
             --classifier-type="$MODEL" \
-            --results-inference="results/inference/inference_results_${AUTHOR_NORMALIZED}_${MODEL}.csv" \
-            --results-loo="results/loo/loo_results_${AUTHOR_NORMALIZED}_${MODEL}.csv" \
-            > "results/outputs/output_${NAME_PATH}_${MODEL}.txt"
+            --results-inference="$BASE_DIR/results/inference/dummy.csv" \
+            --results-loo="$BASE_DIR/results/loo/dummy.csv" \
+            > "$BASE_DIR/results/outputs/output_${NAME_PATH}_${MODEL}.txt" 2>&1
 
-        if [ ! -s "results/outputs/output_${NAME_PATH}_${MODEL}.txt" ]; then
-            echo "Nessun documento trovato per $AUTHOR"
-        fi
+
+        ACTUAL_INFERENCE="$BASE_DIR/results/inference/results_${AUTHOR_NORMALIZED}_${MODEL}.csv"
+        ACTUAL_LOO="$BASE_DIR/results/loo/loo_results_${AUTHOR_NORMALIZED}_${MODEL}.csv"
+
     done
 done
 
-echo "File saved in results/inference, results/loo and results/outputs"
