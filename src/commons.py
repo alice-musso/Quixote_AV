@@ -239,7 +239,7 @@ class AuthorshipVerification:
         else:
             raise ValueError(f"Unsupported classifier type: {classifier_type}")
 
-        cls_range = ClassifierRange(base_cls=base_estimator)
+        cls_range = ClassifierRange(base_cls=base_estimator, positive=self.config.positive_author)
         return cls_range
 
 
@@ -264,6 +264,7 @@ class AuthorshipVerification:
                 'feat_dep': [None, slices['feat_dep']],
                 'feat_char': [None, slices['feat_char']],
                 'feat_k_freq_words': [None, slices['feat_k_freq_words']],
+                'rebalance_ratio': [0.5, None]
             },
             cv=LeaveOneGroupOut(),
             refit=False,
@@ -275,7 +276,6 @@ class AuthorshipVerification:
         mod_selection.fit(X, y, groups=groups)
 
         self.best_params = mod_selection.best_params_
-        best_params = mod_selection.best_params_
         self.best_score = mod_selection.best_score_
         print('best params:', mod_selection.best_params_)
         print('best score:', mod_selection.best_score_)
@@ -286,20 +286,15 @@ class AuthorshipVerification:
             pickle.dump(self.best_params, open(save_hyper_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
         print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
-        self.create_classifier(X, y, cls_range, self.best_params)
+        self.fit_classifier_range(X, y, cls_range, self.best_params)
 
 
-    def create_classifier(self, X, y, cls:BaseEstimator, hyperparams:dict):
+    def fit_classifier_range(self, X, y, cls:BaseEstimator, hyperparams:dict):
         cls_optim = clone(cls)
+        hyperparams['calibrate']=True
         cls_optim.set_params(**hyperparams)
 
-        self.cls = CalibratedClassifierCV(
-            cls_optim,
-            cv=10,
-            #method="isotonic",
-            method="sigmoid",
-            n_jobs=-1,
-        )
+        self.cls = cls_optim
 
         self.cls.fit(X, y)
         print('[done]')
@@ -316,7 +311,7 @@ class AuthorshipVerification:
         assert_coherent_slices(slices, hyperparams)
         cls_range = self.prepare_classifier()
         print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
-        self.create_classifier(X, y, cls_range, hyperparams)
+        self.fit_classifier_range(X, y, cls_range, hyperparams)
 
 
     def leave_one_out(self, train_documents: List[Book]):
@@ -420,7 +415,6 @@ class AuthorshipVerification:
                 for title, author, pred_author, posterior in zip(
                         titles, labels, y_predicted, posteriors
                 ):
-                    pred_idx = self.index_of_author(pred_author)
                     positive_idx = self.index_of_author(self.config.positive_author)
                     saver.add_result(
                         best_params= self.best_params,
@@ -441,7 +435,7 @@ class AuthorshipVerification:
 
     @property
     def classes(self):
-        return self.cls.classes_
+        return np.asarray([self.cls.negative, self.cls.positive])
 
     def index_of_author(self, author):
         return self.classes.tolist().index(author)

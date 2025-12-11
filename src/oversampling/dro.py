@@ -57,22 +57,22 @@ class DistributionalRandomOversampling:
 
 
         # computes how many times each document has to be oversampled in order to match the requested rebalance ratio
-        samples = self._samples_to_match_ratio(y)
+        samples = self.samples_to_match_ratio(y)
 
         # obtains the weight matrix from the training set, that will be used to sample latent terms for synthetic docs
         self.weight_matrix = get_weight_matrix(X, y)
 
         original_indices = np.arange(X.shape[0])
 
-        O = self._oversampling_observed(X, samples)
+        O = self.oversampling_observed(X, samples)
         L = self._oversampling_latent(X, words_by_doc, samples)
         L = self.latent_tfidf.fit_transform(L)
         X_ = hstack([O,L])
 
         #self.original_indices = np.repeat(original_indices, samples)
 
-        y = self._oversampling_observed(y, samples)
-
+        y = self.oversampling_observed(y, samples)
+        self.samples = samples
         return X_, y
 
     def transform(self, X, words_by_doc, samples):
@@ -89,20 +89,17 @@ class DistributionalRandomOversampling:
         assert hasattr(self, 'weight_matrix'), 'transform called before fit'
         samples = as_array_of_ints(samples, nD=X.shape[0])
 
-        O = self._oversampling_observed(X, samples)
+        O = self.oversampling_observed(X, samples)
         L = self._oversampling_latent(X, words_by_doc, samples)
         L = self.latent_tfidf.transform(L)
         X_ = hstack([O, L])
         #y = self._oversampling_observed(y, samples)
 
-
         return X_
-    
 
     def get_original_indices(self, X, samples):
         original_indices = np.arange(X.shape[0])
         return np.repeat(original_indices, samples)
-
 
     def _oversampling_latent(self, X, words_by_doc, samples):
         words_by_doc = as_array_of_ints(words_by_doc, nD=X.shape[0])
@@ -122,13 +119,13 @@ class DistributionalRandomOversampling:
         return  latent_space
     
 
-    def _oversampling_observed(self, X, samples):
+    def oversampling_observed(self, X, samples):
         # replicates elements of X as many times as indicated by the entries in samples
         nD = X.shape[0]
         observed_space = X[np.repeat(np.arange(nD), samples)]
         return observed_space
 
-    def _samples_to_match_ratio(self, y):
+    def samples_to_match_ratio(self, y):
         replicate = np.ones_like(y)
         nD = len(y)
         positives = y.sum()

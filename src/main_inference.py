@@ -35,7 +35,7 @@ class ModelConfig:
         parser = argparse.ArgumentParser()
         parser.add_argument('--train-dir', default='../corpus/training')
         parser.add_argument('--test-dir', default='../corpus/test')
-        parser.add_argument('--positive-author', default='Quevedo',
+        parser.add_argument('--positive-author', default='Cervantes',
                         help='If indicated (default: Cervantes), binarizes the corpus, '
                              'otherwise assumes multiclass classification')
         parser.add_argument('--results-inference', default='../results/inference/results.csv',
@@ -70,7 +70,6 @@ class ModelConfig:
 if __name__ == '__main__':
     config = ModelConfig.from_args()
 
-
     train_corpus = load_corpus(config.train_dir)
     test_corpus = load_corpus(config.test_dir)
 
@@ -81,6 +80,13 @@ if __name__ == '__main__':
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
 
+    # _, _, slices, _ = av_system.prepare_X_y(train_corpus)
+    # hyperparams={
+    #     'feat_funct_words': slice(0,313), # slices['feat_funct_words'],
+    #     'feat_mendenhall': None, # slice(4088, 4113), #slices['feat_mendenhall'],
+    #     'rebalance_ratio': 0.5,
+    # }
+    # av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
     if config.positive_author == "Cervantes":
         av_system.fit(train_corpus, save_hyper_path ="hyperparameters_posauth_Cervantes.pkl")
     else:
