@@ -1,3 +1,5 @@
+from collections import Counter
+
 from scipy.sparse import csr_matrix
 from sklearn.base import BaseEstimator, clone, ClassifierMixin
 import numpy as np
@@ -58,6 +60,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
             func = np.hstack if all(isinstance(b, np.ndarray) for b in blocks) else scipy.sparse.hstack
             return func(blocks)
 
+        doc_idx = np.arange(X.shape[0])
         sparse_feat_slices = [slice_i for slice_i in self.sparse_blocks if slice_i is not None]
         X_sparse = None
         if len(sparse_feat_slices)>0:
@@ -85,13 +88,15 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
                 X_ = _hstack([X_dense_dro, X_sparse_dro])
             else:
                 X_ = X_sparse_dro
+
+            doc_idx = self.dro.oversampling_observed(doc_idx, samples=samples)
         else:
             X_ = _hstack([b for b in [X_dense, X_sparse] if b is not None])
 
         if to_fit:
-            return X_, y
+            return X_, y, doc_idx
         else:
-            return X_
+            return X_, doc_idx
 
     def fit(self, X, y):
         if self.negative is None:
@@ -101,7 +106,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         self.dense_blocks = [self.feat_mendenhall, self.feat_punct, self.feat_sentlength]
 
         y_bin = (np.asarray(y) == self.positive).astype(int)
-        X, y_bin = self._extract_all(X, y_bin)
+        X, y_bin, idx = self._extract_all(X, y_bin)
         self.base_cls = clone(self.base_cls)
         self.set_params(C=self.C, class_weight=self.class_weight)
 
@@ -119,13 +124,17 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         return self
 
     def predict(self, X):
-        X = self._extract_all(X)
+        X, idx = self._extract_all(X)
         y_bin = self.base_cls.predict(X)
-        return self._ybin2str(y_bin)
+        y_bin = majority_vote(y_bin, idx, hard=True)
+        y_str = self._ybin2str(y_bin)
+        return y_str
 
     def predict_proba(self, X):
-        X = self._extract_all(X)
-        return self.base_cls.predict_proba(X)
+        X, idx = self._extract_all(X)
+        post = self.base_cls.predict_proba(X)
+        post = majority_vote(post, idx, hard=False)
+        return post
 
     @property
     def classes_(self):
@@ -135,4 +144,15 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         y_str = np.asarray([self.positive if y_i==1 else self.negative for y_i in y_bin], dtype=str)
         return y_str
 
+
+def majority_vote(y_hat, idx, hard=True):
+    y_final = []
+    for i in np.unique(idx):
+        group = y_hat[idx == i]
+        if hard:
+            vote = int(np.mean(group) >= 0.5)
+        else: # soft
+            vote = np.mean(group, axis=0)
+        y_final.append(vote)
+    return np.asarray(y_final)
 

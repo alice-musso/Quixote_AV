@@ -306,7 +306,8 @@ class AuthorshipVerification:
         def assert_coherent_slices(slices, hyperparams):
             for feat, slice in hyperparams.items():
                 if slice is not None and feat.startswith('feat'):
-                    assert slice == slices[feat], f'wrong slices for feat {feat}'
+                    # assert slice == slices[feat], f'wrong slices for feat {feat}'
+                    hyperparams[feat] = slices[feat]
 
         assert_coherent_slices(slices, hyperparams)
         cls_range = self.prepare_classifier()

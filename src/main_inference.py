@@ -23,7 +23,7 @@ class ModelConfig:
     random_state: int = 0
     max_features: int = 5000
     oversample: bool = False
-    rebalance_ratio: float = 0.2
+    rebalance_ratio: float = 0.5
     save_res: bool = True
     results_inference: str = 'inference_results.csv'
     results_loo:str = 'loo_results.csv'
@@ -81,18 +81,25 @@ if __name__ == '__main__':
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
 
     # _, _, slices, _ = av_system.prepare_X_y(train_corpus)
-    # hyperparams={
-    #     'feat_funct_words': slice(0,313), # slices['feat_funct_words'],
-    #     'feat_mendenhall': None, # slice(4088, 4113), #slices['feat_mendenhall'],
-    #     'rebalance_ratio': 0.5,
-    # }
-    # av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
-    if config.positive_author == "Cervantes":
-        av_system.fit(train_corpus, save_hyper_path ="hyperparameters_posauth_Cervantes.pkl")
-    else:
-        with open("hyperparameters_posauth_Cervantes.pkl", "rb") as f:
-            hyperparams = pickle.load(f)
-        av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+    hyperparams={
+        'C': 0.1,
+        'feat_funct_words': None,
+        'feat_post': slice(313, 4088),
+        'feat_mendenhall': slice(4088, 4113),
+        'feat_sentlength': slice(4113, 5111),
+        'feat_dvex': slice(5111, 5527),
+        'feat_dep': slice(5561, 10561),
+        'feat_char': slice(10561, 15561),
+        'feat_k_freq_words': slice(15561, 18561),
+        'rebalance_ratio': 0.5
+    }
+    av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+    # if config.positive_author == "Cervantes":
+    #     av_system.fit(train_corpus, save_hyper_path ="hyperparameters_posauth_Cervantes.pkl")
+    # else:
+    #     with open("hyperparameters_posauth_Cervantes.pkl", "rb") as f:
+    #         hyperparams = pickle.load(f)
+    #     av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
     #av_system.leave_one_out(train_corpus)
 
