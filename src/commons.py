@@ -253,6 +253,7 @@ class AuthorshipVerification:
         mod_selection = GridSearchCV(
             estimator=cls_range,
             param_grid={
+                'positive': [self.config.positive_author],
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': [None, 'balanced'],
                 'feat_funct_words': [None, slices['feat_funct_words']],
@@ -272,7 +273,6 @@ class AuthorshipVerification:
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
             n_jobs=-1
         )
-        print(set([(yi,gi) for yi, gi in zip(y,groups)]))
         mod_selection.fit(X, y, groups=groups)
 
         self.best_params = mod_selection.best_params_
