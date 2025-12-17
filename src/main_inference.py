@@ -27,6 +27,7 @@ class ModelConfig:
     save_res: bool = True
     results_inference: str = 'inference_results.csv'
     results_loo:str = 'loo_results.csv'
+    hyperparams_save:str = 'hyperparameters_posauth_Cervantes.pkl'
     classifier_type:str = "lr"
 
     @classmethod
@@ -42,6 +43,7 @@ class ModelConfig:
                     help='Filename for saving results')
         parser.add_argument('--results-loo', default='../results/loo/results.csv',
                             help='Filename for saving results for the leave one out whole books + segments')
+        parser.add_argument('--hyperparams-save', default='../hyperparams/hyperparameters_posauth_Cervantes.pkl')
         parser.add_argument('--classifier-type', choices = ["lr", "svm"], default='lr')
 
         args = parser.parse_args()
@@ -54,16 +56,13 @@ class ModelConfig:
         config.test_dir = args.test_dir
         config.positive_author = args.positive_author
         config.classifier_type = args.classifier_type
-
-        inference_path = Path(args.results_inference)
-        config.results_inference = str(inference_path.parent / f"results_{config.positive_author}_{config.classifier_type}.csv")
-
-        loo_path = Path(args.results_loo)
-        config.results_loo = str(loo_path.parent / f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
-
-        for paths in [args.results_inference, args.results_loo]:
-            Path(paths).parent.mkdir(parents=True, exist_ok=True)
-
+        config.results_inference = str(Path(args.results_inference).parent /
+                                       f"results_{config.positive_author}_{config.classifier_type}.csv")
+        config.results_loo = str(Path(args.results_loo).parent /
+                                 f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
+        config.hyperparams_save = str(Path(args.hyperparams_save).parent /f"hyperparameters_posauth_Cervantes.pkl")
+        for path in [config.results_inference, config.results_loo, config.hyperparams_save]:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         return config
             
 
@@ -80,26 +79,30 @@ if __name__ == '__main__':
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
 
-    # _, _, slices, _ = av_system.prepare_X_y(train_corpus)
-    hyperparams={
-        'C': 0.1,
-        'feat_funct_words': None,
-        'feat_post': slice(313, 4088),
-        'feat_mendenhall': slice(4088, 4113),
-        'feat_sentlength': slice(4113, 5111),
-        'feat_dvex': slice(5111, 5527),
-        'feat_dep': slice(5561, 10561),
-        'feat_char': slice(10561, 15561),
-        'feat_k_freq_words': slice(15561, 18561),
-        'rebalance_ratio': 0.5
-    }
-    av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
-    # if config.positive_author == "Cervantes":
-    #     av_system.fit(train_corpus, save_hyper_path ="hyperparameters_posauth_Cervantes.pkl")
-    # else:
-    #     with open("hyperparameters_posauth_Cervantes.pkl", "rb") as f:
-    #         hyperparams = pickle.load(f)
-    #     av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+    _, _, slices, _ = av_system.prepare_X_y(train_corpus)
+    #hyperparams={
+    #    'C': 0.1,
+    #    'feat_funct_words': None,
+    #    'feat_post': slice(313, 4088),
+    #    'feat_mendenhall': slice(4088, 4113),
+    #    'feat_sentlength': slice(4113, 5111),
+    #    'feat_dvex': slice(5111, 5527),
+    #    'feat_dep': slice(5561, 10561),
+    #    'feat_char': slice(10561, 15561),
+    #    'feat_k_freq_words': slice(15561, 18561),
+    #    'rebalance_ratio': 0.5
+    #}
+    #av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+
+    if config.positive_author == "Cervantes":
+         av_system.fit(train_corpus, save_hyper_path=config.hyperparams_save)
+    else:
+        hyper_path = Path(config.hyperparams_save)
+        if not hyper_path.exists():
+            raise FileNotFoundError(f"{hyper_path} does not exist")
+        with hyper_path.oper("rb") as f:
+            hyperparams = pickle.load(f)
+        av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
     #av_system.leave_one_out(train_corpus)
 

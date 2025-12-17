@@ -268,7 +268,7 @@ class AuthorshipVerification:
             },
             cv=LeaveOneGroupOut(),
             refit=False,
-            verbose=1,
+            verbose=10,
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
             n_jobs=-1
         )

@@ -110,7 +110,7 @@ class DistributionalRandomOversampling:
 
         # sampling of latent terms
         latent_space = []
-        for i,n in tqdm(list(enumerate(samples)), desc='oversampling'):
+        for i,n in list(enumerate(samples)):
             for _ in range(n):
                 latent_row = csr_matrix(np.random.multinomial(words_by_doc[i], pvals=p[i]))
                 latent_space.append(latent_row)
