@@ -253,11 +253,10 @@ class AuthorshipVerification:
         mod_selection = GridSearchCV(
             estimator=cls_range,
             param_grid={
-                'positive': [self.config.positive_author],
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': [None, 'balanced'],
-                'feat_funct_words': [None, slices['feat_funct_words']],
-                'feat_post': [None, slices['feat_post']],
+                'feat_funct_words': [slices['feat_funct_words'], None],
+                'feat_post': [slices['feat_post'], None],
                 'feat_mendenhall': [None, slices['feat_mendenhall']],
                 'feat_sentlength': [None, slices['feat_sentlength']],
                 'feat_dvex': [None, slices['feat_dvex']],
@@ -271,7 +270,7 @@ class AuthorshipVerification:
             refit=False,
             verbose=10,
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
-            n_jobs=-1
+            n_jobs=1
         )
         mod_selection.fit(X, y, groups=groups)
 
