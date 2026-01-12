@@ -130,16 +130,10 @@ class SaveResults:
         )
         self.df.to_csv(result_path, index=False)
 
-# ----------------------------------------------
-# Evaluate model
-# ----------------------------------------------
-
 class ModelEvaluator:
 
     def __init__(self, config: "ModelConfig"):
-        """
-        evaluator for binary model, confusion matrix not yet implemented
-        """
+        """evaluator for binary model"""
         self.config = config
 
     def evaluate (self, y:list, y_pred:list):
@@ -155,19 +149,12 @@ class ModelEvaluator:
 
         return acc, tn, fp, fn, tp
 
-
-# ----------------------------------------------
-# Model
-# ----------------------------------------------
-class AuthorshipVerification:
-    """Main class for authorship verification system"""
+class FeaturePreparator:
+    """Class for feature extraction and preparation"""
 
     def __init__(self, config: "ModelConfig", nlp: spacy.Language):
         self.config = config
         self.nlp = nlp
-        self.cls = None
-        self.best_params = None
-        self.best_score = None
 
     def feature_extraction_fit(self, processed_docs: List[spacy.tokens.Doc], y: List[str]):
 
@@ -228,6 +215,20 @@ class AuthorshipVerification:
         X, y, slices = self.feature_extraction_fit(texts, labels)
         return X, y, slices, groups
 
+# ----------------------------------------------
+# Binary Model
+# ----------------------------------------------
+class AuthorshipVerification:
+    """Main class for authorship verification system"""
+
+    def __init__(self, config: "ModelConfig", nlp: spacy.Language):
+        self.config = config
+        self.nlp = nlp
+        self.feature_preparator = FeaturePreparator(config, nlp)
+        self.cls = None
+        self.best_params = None
+        self.best_score = None
+
     def prepare_classifier(self):
         classifier_type = getattr(self.config, "classifier_type", "lr")
         print(f"Building classifier: {classifier_type}\n")
@@ -245,7 +246,7 @@ class AuthorshipVerification:
 
     def fit(self, train_documents: List[Book], save_hyper_path:str=None):
 
-        X, y, slices, groups = self.prepare_X_y(train_documents)
+        X, y, slices, groups = self.feature_preparator.prepare_X_y(train_documents)
 
         # model selection
         cls_range = self.prepare_classifier()
@@ -270,7 +271,7 @@ class AuthorshipVerification:
             refit=False,
             verbose=10,
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
-            n_jobs=1
+            n_jobs=-1
         )
         mod_selection.fit(X, y, groups=groups)
 
@@ -300,7 +301,7 @@ class AuthorshipVerification:
         return self
 
     def fit_with_hyperparams(self, train_documents: List[Book], hyperparams: dict):
-        X, y, slices, groups = self.prepare_X_y(train_documents)
+        X, y, slices, groups = self.feature_preparator.prepare_X_y(train_documents)
 
         def assert_coherent_slices(slices, hyperparams):
             for feat, slice in hyperparams.items():
@@ -338,7 +339,7 @@ class AuthorshipVerification:
                 titles.append(book.title)
                 segment_flags.append("segment")
 
-        X, y, _ = self.feature_extraction_fit(texts, labels)
+        X, y, _ = self.feature_preparator.feature_extraction_fit(texts, labels)
 
         loo = LeaveOneGroupOut()
 
@@ -403,7 +404,7 @@ class AuthorshipVerification:
         labels = [book.author for book in test_corpus]
         titles = [book.title for book in test_corpus]
 
-        X = self.feature_extraction_transform(texts)
+        X = self.feature_preparator.feature_extraction_transform(texts)
 
         y_predicted = self.cls.predict(X)
 
@@ -426,7 +427,6 @@ class AuthorshipVerification:
                         type="full book"
                     )
                 saver.save()
-            else: None
 
             return y_predicted, posteriors
 
