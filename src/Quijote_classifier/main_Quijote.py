@@ -42,9 +42,9 @@ class ModelConfig:
         parser.add_argument('--target-title', default='Quijote')
         parser.add_argument('--max-features', type=int, default=3000,
                             help='Number of most frequent words to use')
-        parser.add_argument('--results-inference', default='../results/results_inference.csv',
+        parser.add_argument('--results-inference', default='../../results/Quijote_class/results_inference.csv',
                             help='Filename for saving results')
-        parser.add_argument('--feature-importance', default='../results/feature_importance.json',
+        parser.add_argument('--feature-importance', default='../../results/Quijote_class/feature_importance.json',
                             help='Filename for saving feature importance')
 
         args = parser.parse_args()
