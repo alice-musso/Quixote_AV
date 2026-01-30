@@ -215,6 +215,22 @@ class FeaturePreparator:
         X, y, slices = self.feature_extraction_fit(texts, labels)
         return X, y, slices, groups
 
+    def prepare_X_y_title(self, train_documents: List[Book]):
+        texts = []
+        labels = []
+        groups = []
+        for i, book in enumerate(train_documents):
+            label = book.title
+            texts.append(book.processed)
+            labels.append(label)
+            groups.append(i)
+            for segment in book.segmented:
+                texts.append(segment)
+                labels.append(label)
+                groups.append(i)
+        X, y, slices = self.feature_extraction_fit(texts, labels)
+        return X, y, slices, groups
+
 # ----------------------------------------------
 # Binary Model
 # ----------------------------------------------

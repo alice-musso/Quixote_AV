@@ -1,1 +1,3 @@
 corpus/*.txt
+/src/results/
+/src/Quijote_classifier/corpus/
