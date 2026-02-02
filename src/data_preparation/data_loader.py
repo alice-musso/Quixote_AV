@@ -49,7 +49,8 @@ class Book:
         self.raw_text = raw_text
         self.clean_text = clean_text
         self.processed = None
-        self.fragments = None
+        self.segmented = None
+        # self.fragments = None
 
     def _clean_text(self, text):
         """Clean and normalize text content."""
@@ -112,10 +113,10 @@ class DocumentProcessor:
         return processed_doc
 
 
-def _job_open_book(file):
+def _job_open_book(file, cache_path='./data_preparation/.cache'):
 
     cache_idx = Path(file).name.replace(' ','_')
-    processor = DocumentProcessor(savecache=f'./data_preparation/.cache/processed_doc_{cache_idx}.pkl')
+    processor = DocumentProcessor(savecache=f'{cache_path}/processed_doc_{cache_idx}.pkl')
     segmentator = Segmentator()
 
     book = Book(file)
@@ -129,13 +130,13 @@ def _job_open_book(file):
     return book
 
 
-def load_corpus(path: str):
+def load_corpus(path: str, cache_path='./data_preparation/.cache'):
 
     multiprocessing.set_start_method("spawn", force=True)
 
     paths = Path(path).glob('*.txt')
     with ProcessPoolExecutor(max_workers=16) as executor:
-        futures = {executor.submit(_job_open_book, p): p for p in paths}
+        futures = {executor.submit(_job_open_book, p, cache_path): p for p in paths}
         corpus = []
         for future in as_completed(futures):
             corpus.append(future.result())

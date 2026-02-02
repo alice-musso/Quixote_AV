@@ -190,8 +190,8 @@ def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=-1):
     nD, nF = coocurrence_matrix.shape
     nD2, nC = label_matrix.shape
 
-    if nC==1:
-        raise ValueError('supervised matrix has to be in binary multiclass format')
+    # if nC==1:
+    #     raise ValueError('supervised matrix has to be in binary multiclass format')
     if nD != nD2:
         raise ValueError('Number of rows in coocurrence matrix shape %s and label matrix shape %s is not consistent' %
                          (coocurrence_matrix.shape,label_matrix.shape))

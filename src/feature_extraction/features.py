@@ -29,11 +29,11 @@ class FeatureExtractorAA(ABC):
 class FeaturesFrequentWords(FeatureExtractorAA):
 
     def __init__(self, max_features=3000, ngram_range=(1, 1), analyzer='word', norm='l2', use_idf=True, smooth_idf=True,
-                 sublinear_tf=True):
+                 sublinear_tf=True, remove_stopwords=None):
 
         self.vectorizer = TfidfVectorizer(analyzer=analyzer, ngram_range=ngram_range, max_features=max_features,
                                           dtype=np.float64, norm=norm, use_idf=use_idf, smooth_idf=smooth_idf,
-                                          sublinear_tf=sublinear_tf)
+                                          sublinear_tf=sublinear_tf, stop_words=remove_stopwords)
         self.is_fitted = False
 
     def fit(self, documents, authors=None):

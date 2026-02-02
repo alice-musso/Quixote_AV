@@ -4,7 +4,7 @@ import spacy
 from sklearn.linear_model import LogisticRegression
 
 from src.feature_extraction.features import FeaturesFrequentWords
-from src.data_preparation.data_loader import Book
+from src.data_preparation.data_loader import Book, get_spanish_function_words
 from sklearn.metrics import f1_score
 from supervised_term_weighting.supervised_vectorizer import TSRweighting
 from supervised_term_weighting.tsr_functions import information_gain
@@ -33,7 +33,8 @@ class TextClassificationTrainer:
 
         # Frequent words extractor
         self.vectorizer = FeaturesFrequentWords(
-            max_features=max_features
+            max_features=max_features,
+            remove_stopwords=list(get_spanish_function_words())
         )
 
         # Logistic Regression classifier
@@ -69,8 +70,8 @@ class TextClassificationTrainer:
             labels.append(label)
 
             # Segments (same label)
-            if book.fragments is not None:
-                for fragment in book.fragments:
+            if book.segmented is not None:
+                for fragment in book.segmented:
                     documents.append(fragment)
                     labels.append(label)
 
@@ -112,7 +113,7 @@ class TextClassificationTrainer:
         predictions = self.predict(documents)
         return f1_score(true_labels, predictions, pos_label=1)
 
-    def get_feature_importance(self) -> Dict[str, float]:
+    def ___get_feature_importance(self) -> Dict[str, float]:
         """
         Get information gain scores for frequent words.
 
