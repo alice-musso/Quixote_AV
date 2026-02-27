@@ -80,33 +80,33 @@ if __name__ == '__main__':
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
 
     _, _, slices, _ = av_system.prepare_X_y(train_corpus)
-    hyperparams={
-        'C': 0.0001,
-        'class_weight': None,
-        'feat_funct_words': None,
-        'feat_punct': None,
-        'feat_post': slice(313, 4088),
-        'feat_mendenhall': slice(4088, 4113),
-        'feat_sentlength': slice(4113, 5111),
-        'feat_dvex': slice(5111, 5527),
-        'feat_dep': slice(5561, 10561),
-        'feat_char': slice(10561, 15561),
-        'feat_k_freq_words': slice(15561, 18561),
-        'rebalance_ratio': None
-    }
-    av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+    #hyperparams={
+    #    'C': 0.0001,
+    #    'class_weight': None,
+    #    'feat_funct_words': None,
+    #    'feat_punct': None,
+    #    'feat_post': slice(313, 4088),
+    #    'feat_mendenhall': slice(4088, 4113),
+    #    'feat_sentlength': slice(4113, 5111),
+    #    'feat_dvex': slice(5111, 5527),
+    #    'feat_dep': slice(5561, 10561),
+    #    'feat_char': slice(10561, 15561),
+    #    'feat_k_freq_words': slice(15561, 18561),
+    #    'rebalance_ratio': None
+    #}
+    #av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
-    #if config.positive_author == "Cervantes":
-    #     av_system.fit(train_corpus, save_hyper_path=config.hyperparams_save)
-    #else:
-    #    hyper_path = Path(config.hyperparams_save)
-    #    if not hyper_path.exists():
-    #        raise FileNotFoundError(f"{hyper_path} does not exist")
-    #    with hyper_path.oper("rb") as f:
-    #        hyperparams = pickle.load(f)
-    #    av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+    if config.positive_author == "Cervantes":
+         av_system.fit(train_corpus, save_hyper_path=config.hyperparams_save)
+    else:
+        hyper_path = Path(config.hyperparams_save)
+        if not hyper_path.exists():
+            raise FileNotFoundError(f"{hyper_path} does not exist")
+        with hyper_path.oper("rb") as f:
+            hyperparams = pickle.load(f)
+        av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
-    #av_system.leave_one_out(train_corpus)
+    av_system.leave_one_out(train_corpus)
 
     predicted_authors, posteriors = av_system.predict(test_corpus, return_posteriors=True)
 

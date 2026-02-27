@@ -59,7 +59,6 @@ class TextClassificationTrainer:
         labels = []
 
         for book in books:
-            # Binary label: target title vs not
             if book.author == self.target_title:
                 label = 1
             else:
@@ -76,6 +75,24 @@ class TextClassificationTrainer:
                     labels.append(label)
 
         return documents, labels
+
+    def prepare_book_data(self, books: List[Book]):
+        documents = []
+        labels = []
+
+        for book in books:
+            if book.author == self.target_title:
+                label = 1
+            else:
+                label = 0
+
+            # Full book
+            documents.append(book.processed)
+            labels.append(label)
+            labels_as_array = np.array(labels)
+
+        return documents, labels_as_array
+
 
     def fit(self, train_documents: List[Book]) -> "TextClassificationTrainer":
         """
