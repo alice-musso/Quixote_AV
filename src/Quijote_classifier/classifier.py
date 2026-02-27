@@ -58,7 +58,8 @@ class TextClassificationTrainer:
         documents = []
         labels = []
 
-        for book in books:
+        groups = []
+        for g, book in enumerate(books):
             if book.author == self.target_title:
                 label = 1
             else:
@@ -67,14 +68,16 @@ class TextClassificationTrainer:
             # Full book
             documents.append(book.processed)
             labels.append(label)
+            groups.append(g)
 
             # Segments (same label)
             if book.segmented is not None:
                 for fragment in book.segmented:
                     documents.append(fragment)
                     labels.append(label)
+                    groups.append(g)
 
-        return documents, labels
+        return documents, labels, groups
 
     def prepare_book_data(self, books: List[Book]):
         documents = []

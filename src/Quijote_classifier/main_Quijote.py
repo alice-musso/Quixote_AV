@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split, GridSearchCV, LeaveOneGroupOut, LeaveOneOut, cross_val_score
 from sklearn.preprocessing import normalize
@@ -13,7 +13,7 @@ from array import array
 
 from src.Quijote_classifier.classifier import TextClassificationTrainer
 from src.Quijote_classifier.supervised_term_weighting.tsr_functions import chi_square
-from src.data_preparation.data_loader import load_corpus, binarize_title
+from src.data_preparation.data_loader import load_corpus, binarize_author_by_title
 # from Quijote_classifier import TextClassificationTrainer
 from src.feature_extraction.features import FeaturesFrequentWords
 from supervised_term_weighting.tsr_functions import (
@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 
 def compute_feature_ranking(train_corpus, tsr_metric):
-    documents, y = trainer._prepare_training_data(train_corpus)
+    documents, y, groups = trainer._prepare_training_data(train_corpus)
     X = trainer.vectorizer.fit_transform(documents)
     print(f'done {X.shape}')
 
@@ -38,7 +38,7 @@ def compute_feature_ranking(train_corpus, tsr_metric):
     feat_idx_importance = np.argsort(tsr_matrix)[::-1]
     feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx] > 0]
     vocabulary = trainer.vectorizer.vectorizer.get_feature_names_out()
-    return feat_idx_importance, vocabulary, tsr_matrix
+    return feat_idx_importance, vocabulary, tsr_matrix, X, y, groups
 
 
 @dataclass
@@ -66,7 +66,7 @@ class ModelConfig:
     def from_args(cls):
         """Create config from command line args"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--train-dir', default='../../corpus/training')
+        parser.add_argument('--train-dir', default='../../corpus/quixote_vs_notquixote')
         parser.add_argument('--target-title', default='Quijote')
         parser.add_argument('--max-features', type=int, default=3000,
                             help='Number of most frequent words to use')
@@ -95,9 +95,11 @@ if __name__ == '__main__':
     config = ModelConfig.from_args()
 
     train_corpus = load_corpus(config.train_dir, cache_path='../data_preparation/.cache')
-    train_corpus = binarize_title(train_corpus, config.target_title)
+    train_corpus = binarize_author_by_title(train_corpus, target_title=config.target_title)
     # test_corpus = load_corpus(config.test_dir, cache_path='../data_preparation/.cache')
     # test_corpus = binarize_title(test_corpus, config.target_title)
+
+
 
     trainer = TextClassificationTrainer(
         max_features=config.max_features,
@@ -129,27 +131,27 @@ if __name__ == '__main__':
     #feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx]>0]
     #vocabulary = trainer.vectorizer.vectorizer.get_feature_names_out()
 
-    feat_idx_importance, vocabulary, tsr_matrix = compute_feature_ranking(train_corpus, tsr_metric)
+    feat_idx_importance, vocabulary, tsr_matrix, X, y, groups = compute_feature_ranking(train_corpus, tsr_metric)
 
-    books, y = trainer.prepare_book_data(train_corpus)
-    X = trainer.vectorizer.transform(books)
+    # books, y = trainer.prepare_book_data(train_corpus)
+    # X = trainer.vectorizer.transform(books)
 
-    loo = LeaveOneOut()
+
+    # loo = LeaveOneOut()
     #for train_idx, test_idx in loo.split(X):
     #    Xtr, Xte = X[train_idx], X[test_idx]
     #    ytr, yte = y[train_idx], y[test_idx]
 
-    lr = LogisticRegression()
-    """
-    lr = GridSearchCV(LogisticRegression(),
-                    param_grid={
-                        'C':np.logspace(-3,3,7),
-                        'class_weight':['balanced', None],
-                    },
-                    n_jobs=-1,
-                    cv=loo
-                    )
-    """
+    # lr = LogisticRegression()
+
+    # lr = GridSearchCV(LogisticRegression(),
+    #                 param_grid={
+    #                     'C':np.logspace(-3,3,7),
+    #                     'class_weight':['balanced', None],
+    #                 },
+    #                 n_jobs=-1,
+    #                 cv=loo
+    #                 )
 
 
 
@@ -164,13 +166,25 @@ if __name__ == '__main__':
     candidates = True
     # first = True
     X = X.toarray()
+    titles = [b.title for b in train_corpus]
+    # label_assignments = [(title, label) for title, label in zip(titles, y)]
+    # print(f'{label_assignments=}')
+
+    # loo = LeaveOneGroupOut()
+    # loo.get_n_splits()
     while not degenerated and candidates:
         acc = cross_val_score(
-            estimator=LogisticRegression(),
+            estimator=LogisticRegressionCV(),
             X=X, y=y,
-            cv=LeaveOneOut(),
+            cv=LeaveOneGroupOut(),
+            groups=groups,
+            scoring='accuracy',
             n_jobs=-1,
-        ).mean()
+        )
+
+        for (acc_i, title_i) in zip(acc, titles):
+            print(f'classification accuracy for {title_i} is {acc_i*100:.2f}%')
+        acc = acc.mean()
 
         print(f'Acc={acc*100:.2f}% num-feats={feats_used}')
 
