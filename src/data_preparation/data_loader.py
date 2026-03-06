@@ -156,13 +156,13 @@ def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
             book.author = 'Not' + positive_author
     return corpus
 
-def binarize_author_by_title(corpus: List["Book"], target_title ='Quijote'):
+def binarize_title(corpus: List["Book"], target_title ='Quijote'):
     """Binarize book titles based on target title."""
     for book in corpus:
         if target_title.lower() in book.title.lower():
-            book.author = target_title
+            book.title = target_title
         else:
-            book.author = 'Not' + target_title
+            book.title = 'Not' + target_title
     return corpus
 
 def remove_unique_authors(corpus: List[Book]):

@@ -296,6 +296,7 @@ class AuthorshipVerification:
 
         print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
         self.fit_classifier_range(X, y, cls_range, self.best_params)
+        return X, y, slices, groups, self.best_params, self.best_score
 
 
     def fit_classifier_range(self, X, y, cls:BaseEstimator, hyperparams:dict):
@@ -307,7 +308,7 @@ class AuthorshipVerification:
 
         self.cls.fit(X, y)
         print('[done]')
-        return self
+        return self, X
 
     def fit_with_hyperparams(self, train_documents: List[Book], hyperparams: dict):
         X, y, slices, groups = self.prepare_X_y(train_documents)
@@ -322,6 +323,7 @@ class AuthorshipVerification:
         cls_range = self.prepare_classifier()
         print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
         self.fit_classifier_range(X, y, cls_range, hyperparams)
+        return X, y, slices, groups, self.best_params, self.best_score
 
 
     def leave_one_out(self, train_documents: List[Book]):
@@ -441,6 +443,42 @@ class AuthorshipVerification:
 
         else:
             return y_predicted
+
+    def fit_and_predict_matrix(
+            self,
+            X_clean,
+            y: np.ndarray,
+            groups,
+            best_params: dict,
+            train_corpus,
+            test_corpus
+    ):
+        """
+        Fit ClassifierRange with the winning hyperparameters (from step 1) on
+        X_clean, run LOO evaluation, then predict on the test corpus.
+        """
+
+        cls_range = self.prepare_classifier()
+        self.best_params = best_params
+        self.best_score = None
+        self.fit_classifier_range(X_clean, y, cls_range, best_params)
+
+        print("\nRunning leave-one-out evaluation …")
+        self.leave_one_out(train_corpus)
+
+        print("\nRunning inference on test corpus …")
+        predicted_authors, posteriors = self.predict(
+            test_corpus, return_posteriors=True
+        )
+        pos_idx = self.index_of_author(self.positive_author)
+
+        print("\nInference results:")
+        for i, book in enumerate(test_corpus):
+            print(
+                f'  "{book.title}"  author={book.author}  '
+                f"predicted={predicted_authors[i]}  "
+                f"posterior={posteriors[i, pos_idx]:.4f}"
+            )
 
     @property
     def classes(self):

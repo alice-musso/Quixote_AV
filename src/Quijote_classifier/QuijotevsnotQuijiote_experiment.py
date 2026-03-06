@@ -10,20 +10,17 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split, GridSearchCV, LeaveOneGroupOut, LeaveOneOut, cross_val_score
 from sklearn.preprocessing import normalize
 from array import array
-from src.Quijote_classifier.supervised_term_weighting.tsr_functions import chi_square
-from src.data_preparation.data_loader import load_corpus, binarize_author_by_title
+from src.Quijote_classifier.supervised_term_weighting.tsr_functions import chi_square, get_supervised_matrix, get_tsr_matrix, posneg_information_gain, gss
+from src.data_preparation.data_loader import load_corpus, binarize_title
 # from Quijote_classifier import TextClassificationTrainer
 from src.feature_extraction.features import FeaturesFrequentWords
-from supervised_term_weighting.tsr_functions import (
-    get_supervised_matrix, get_tsr_matrix, posneg_information_gain, gss
-)
 from src.data_preparation.data_loader import Book, get_spanish_function_words
 from typing import List, Dict, Optional
 
 warnings.filterwarnings("ignore")
 
 
-def prepare_training_data(books: List[Book]):
+def prepare_labels(books: List[Book]):
     """
     Extract texts and binary labels from Book objects.
     """
@@ -32,7 +29,7 @@ def prepare_training_data(books: List[Book]):
     groups = []
 
     for g, book in enumerate(books):
-        if book.author == "Quijote":
+        if book.title == "Quijote":
             label = 1
         else:
             label = 0
@@ -51,10 +48,7 @@ def prepare_training_data(books: List[Book]):
 
     return documents, labels, groups
 
-def compute_feature_ranking(documents, y, groups, vectorizer, tsr_metric):
-
-    X = vectorizer.fit_transform(documents)
-    print(f'done {X.shape}')
+def compute_feature_ranking(X, tsr_metric):
 
     Xtr, Xte, ytr, yte = (
         train_test_split(X, y, test_size=0.3, random_state=0)
@@ -124,7 +118,7 @@ def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
 
 @dataclass
 class Config:
-    train_dir: str = '../../corpus/quixote_vs_notquixote'
+    train_dir: str = '../../corpus/training'
     target_title: str = 'Quijote'
 
     @classmethod
@@ -139,19 +133,19 @@ if __name__ == '__main__':
     config = Config.from_args()
 
     train_corpus = load_corpus(config.train_dir, cache_path='../data_preparation/.cache')
-    train_corpus = binarize_author_by_title(train_corpus, target_title=config.target_title)
+    train_corpus = binarize_title(train_corpus, target_title=config.target_title)
 
-    documents, y, groups = prepare_training_data(train_corpus)
+    documents, y, groups = prepare_labels(train_corpus)
+    vectorizer = FeaturesFrequentWords(max_features=3000,
+        remove_stopwords=list(get_spanish_function_words())
+    )
+    X = vectorizer.fit_transform(documents)
+    print(f'done {X.shape}')
 
     tsr_metric = posneg_information_gain
     #tsr_metric = gss
     #tsr_metric = chi_square
-    vectorizer = FeaturesFrequentWords(
-        max_features=3000,
-        remove_stopwords=list(get_spanish_function_words())
-    )
 
-    feat_idx_importance, vocabulary, tsr_matrix, X, y, groups = compute_feature_ranking(documents, y, groups,
-                                                                                        vectorizer, tsr_metric)
+    feat_idx_importance, vocabulary, tsr_matrix, X, y, groups = compute_feature_ranking(X, tsr_metric)
 
     ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups)
