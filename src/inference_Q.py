@@ -65,6 +65,7 @@ class ModelConfig:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         return config
 
+
 if __name__ == '__main__':
     config = ModelConfig.from_args()
 

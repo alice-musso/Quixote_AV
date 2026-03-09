@@ -138,7 +138,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
 
     @property
     def classes_(self):
-        return self.base_cls.classes_
+        return np.array([self.negative, self.positive])
 
     def _ybin2str(self, y_bin):
         y_str = np.asarray([self.positive if y_i==1 else self.negative for y_i in y_bin], dtype=str)

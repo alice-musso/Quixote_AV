@@ -262,25 +262,25 @@ class AuthorshipVerification:
         mod_selection = GridSearchCV(
             estimator=cls_range,
             param_grid={
-                'positive': [self.config.positive_author],
+                # 'positive': self.config.positive_author,
                 'C': np.logspace(-4, 4, 9),
                 'class_weight': [None, 'balanced'],
-                'feat_funct_words': [None, slices['feat_funct_words']],
-                'feat_post': [None, slices['feat_post']],
-                'feat_mendenhall': [None, slices['feat_mendenhall']],
-                'feat_sentlength': [None, slices['feat_sentlength']],
-                'feat_dvex': [None, slices['feat_dvex']],
-                'feat_punct': [None, slices['feat_punct']],
-                'feat_dep': [None, slices['feat_dep']],
-                'feat_char': [None, slices['feat_char']],
-                'feat_k_freq_words': [None, slices['feat_k_freq_words']],
+                'feat_funct_words': [slices['feat_funct_words'], None],
+                'feat_post': [slices['feat_post'], None],
+                'feat_mendenhall': [slices['feat_mendenhall'], None],
+                'feat_sentlength': [slices['feat_sentlength'], None],
+                'feat_dvex': [slices['feat_dvex'], None],
+                'feat_punct': [slices['feat_punct'], None],
+                'feat_dep': [slices['feat_dep'], None],
+                'feat_char': [slices['feat_char'], None],
+                'feat_k_freq_words': [slices['feat_k_freq_words'], None],
                 'rebalance_ratio': [0.5, None]
             },
             cv=LeaveOneGroupOut(),
             refit=False,
             verbose=10,
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
-            n_jobs=-1
+            n_jobs=1
         )
         mod_selection.fit(X, y, groups=groups)
 
