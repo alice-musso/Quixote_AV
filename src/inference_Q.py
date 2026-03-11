@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 @dataclass
 class ModelConfig:
     """Configuration for the model training and evaluation"""
-    n_jobs: int = 30
+    n_jobs: int = -1
     segment_min_token_size: int = 500
     random_state: int = 0
     max_features: int = 5000
@@ -99,8 +99,9 @@ if __name__ == '__main__':
     tsr_metric = posneg_information_gain
     # tsr_metric = gss
     # tsr_metric = chi_square
-    feat_idx_importance, vocabulary, tsr_matrix, X, y_q, groups = compute_feature_ranking(X, tsr_metric)
+    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y_q, tsr_metric)
 
+    vocabulary = "??????"
     X_clean = ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y_q, groups)
 
     #fare un nuovo fit con la matrice pulita

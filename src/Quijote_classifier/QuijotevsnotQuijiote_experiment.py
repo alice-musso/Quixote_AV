@@ -48,7 +48,7 @@ def prepare_labels(books: List[Book]):
 
     return documents, labels, groups
 
-def compute_feature_ranking(X, tsr_metric):
+def compute_feature_ranking(X, y, tsr_metric):
 
     Xtr, Xte, ytr, yte = (
         train_test_split(X, y, test_size=0.3, random_state=0)
@@ -59,8 +59,7 @@ def compute_feature_ranking(X, tsr_metric):
     tsr_matrix = get_tsr_matrix(supervised_matrix, tsr_metric, n_jobs=-1).flatten()
     feat_idx_importance = np.argsort(tsr_matrix)[::-1]
     feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx] > 0]
-    vocabulary = vectorizer.vectorizer.get_feature_names_out()
-    return feat_idx_importance, vocabulary, tsr_matrix, X, y, groups
+    return feat_idx_importance, tsr_matrix
 
 def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
 
@@ -141,11 +140,12 @@ if __name__ == '__main__':
     )
     X = vectorizer.fit_transform(documents)
     print(f'done {X.shape}')
+    vocabulary = vectorizer.vectorizer.get_feature_names_out()
 
     tsr_metric = posneg_information_gain
     #tsr_metric = gss
     #tsr_metric = chi_square
 
-    feat_idx_importance, vocabulary, tsr_matrix, X, y, groups = compute_feature_ranking(X, tsr_metric)
+    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y, tsr_metric)
 
     ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups)
