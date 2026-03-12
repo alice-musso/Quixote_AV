@@ -252,7 +252,7 @@ class AuthorshipVerification:
         return cls_range
 
 
-    def fit(self, train_documents: List[Book], save_hyper_path:str=None):
+    def model_selection(self, train_documents: List[Book], save_hyper_path:str=None, refit=True):
 
         X, y, slices, groups = self.prepare_X_y(train_documents)
 
@@ -278,7 +278,7 @@ class AuthorshipVerification:
             },
             cv=LeaveOneGroupOut(),
             refit=False,
-            verbose=10,
+            verbose=1,
             scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
             n_jobs=-1
         )
@@ -294,9 +294,12 @@ class AuthorshipVerification:
             os.makedirs(parent, exist_ok=True)
             pickle.dump(self.best_params, open(save_hyper_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-        print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
-        self.fit_classifier_range(X, y, cls_range, self.best_params)
-        return X, y, slices, groups, self.best_params, self.best_score
+        if refit:
+            print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+            self.fit_classifier_range(X, y, cls_range, self.best_params)
+
+
+        return X, y, feature_names, groups, self.best_params, self.best_score
 
 
     def fit_classifier_range(self, X, y, cls:BaseEstimator, hyperparams:dict):

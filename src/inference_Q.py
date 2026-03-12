@@ -9,7 +9,7 @@ import spacy
 
 from commons import AuthorshipVerification
 from data_preparation.data_loader import load_corpus, binarize_corpus, binarize_title
-from Quijote_classifier.QuijotevsnotQuijiote_experiment import prepare_labels, ablation, compute_feature_ranking
+from Quijote_classifier.QuijotevsnotQuijiote_experiment import binarize_labels_for_topic, ablation, compute_feature_ranking
 from Quijote_classifier.supervised_term_weighting.tsr_functions import posneg_information_gain, gss, chi_square
 
 warnings.filterwarnings("ignore")
@@ -78,36 +78,40 @@ if __name__ == '__main__':
 
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
-    _, _, slices, _ = av_system.prepare_X_y(train_corpus)
+    # _, _, slices, _ = av_system.prepare_X_y(train_corpus)
 
+    # Feature-block selection for authorship verification ('Cervantes')
+    # --------------------------------------------------------------------------------------------
     if config.positive_author == "Cervantes":
-        X, y, slices, groups, best_params, best_score= av_system.fit(train_corpus, save_hyper_path=config.hyperparams_save)
+        X, y, slices, groups, best_params, best_score = av_system.model_selection(
+            train_corpus, save_hyper_path=config.hyperparams_save, refit=False
+        )
     else:
+        raise NotImplementedError('not yet revised')
         hyper_path = Path(config.hyperparams_save)
         if not hyper_path.exists():
             raise FileNotFoundError(f"{hyper_path} does not exist")
         with hyper_path.oper("rb") as f:
             hyperparams = pickle.load(f)
-        X, y, slices, groups, best_params, best_score= av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
+        X, y, slices, groups, best_params, best_score = av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
-    av_system.leave_one_out(train_corpus)
 
-    q_corpus = binarize_title(train_corpus, target_title="Quijote")
+    # Feature ablation for topic removal ('Quixote')
+    # --------------------------------------------------------------------------------------------
+    # q_corpus = binarize_title(train_corpus, target_title="Quijote")
     # carico il train e poi gli chiedo di trasformare la label titolo in Quijiote vs not
-    documents, y_q, groups = prepare_labels(q_corpus)
-
-    tsr_metric = posneg_information_gain
-    # tsr_metric = gss
-    # tsr_metric = chi_square
-    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y_q, tsr_metric)
+    documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
+    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y_quixote, tsr_metric=posneg_information_gain)
 
     vocabulary = "??????"
-    X_clean = ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y_q, groups)
+    X_clean = ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y_quixote, groups)
 
     #fare un nuovo fit con la matrice pulita
     #fare la loo nuova
     #fare la predizione e salvarla
 
+    # Leave-one-out performance check for authorship verification ('Cervantes') after ablation
+    # --------------------------------------------------------------------------------------------
     cls_range = av_system.prepare_classifier()
     av_system.best_params = best_params
     av_system.best_score = None

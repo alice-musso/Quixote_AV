@@ -1,13 +1,8 @@
-from collections import Counter
-
-from scipy.sparse import csr_matrix
 from sklearn.base import BaseEstimator, clone, ClassifierMixin
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.linear_model import LogisticRegression
 import scipy
-
-from oversampling.dro import DistributionalRandomOversampling as DRO, as_array_of_ints
+from oversampling.dro import DistributionalRandomOversampling as DRO
 
 
 class ClassifierRange(ClassifierMixin, BaseEstimator):

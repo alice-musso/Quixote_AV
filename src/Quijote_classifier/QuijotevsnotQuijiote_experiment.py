@@ -20,7 +20,7 @@ from typing import List, Dict, Optional
 warnings.filterwarnings("ignore")
 
 
-def prepare_labels(books: List[Book]):
+def binarize_labels_for_topic(books: List[Book], target_title):
     """
     Extract texts and binary labels from Book objects.
     """
@@ -29,7 +29,7 @@ def prepare_labels(books: List[Book]):
     groups = []
 
     for g, book in enumerate(books):
-        if book.title == "Quijote":
+        if target_title.lower() in book.title.lower():
             label = 1
         else:
             label = 0
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     train_corpus = load_corpus(config.train_dir, cache_path='../data_preparation/.cache')
     train_corpus = binarize_title(train_corpus, target_title=config.target_title)
 
-    documents, y, groups = prepare_labels(train_corpus)
+    documents, y, groups = binarize_labels_for_topic(train_corpus)
     vectorizer = FeaturesFrequentWords(max_features=3000,
         remove_stopwords=list(get_spanish_function_words())
     )
