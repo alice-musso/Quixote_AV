@@ -127,8 +127,3 @@ if __name__ == '__main__':
             f"predicted={predicted_authors[i]}  "
             f"posterior={posteriors[i, pos_idx]:.4f}"
         )
-
-    predicted_authors, posteriors = av_system.predict(test_corpus, return_posteriors=True)
-
-    if config.positive_author:
-        index_of_positive_author = av_system.index_of_author(config.positive_author)
