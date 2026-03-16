@@ -239,7 +239,7 @@ class AuthorshipVerification:
     #    X, y, slices = self.feature_extraction_fit(texts, labels)
     #    return X, y, slices, groups
 
-    def prepare_classifier(self):
+    def new_classifier(self):
         classifier_type = getattr(self.config, "classifier_type", "lr")
         print(f"Building classifier: {classifier_type}\n")
 
@@ -249,17 +249,16 @@ class AuthorshipVerification:
             base_estimator = LinearSVC(random_state=self.config.random_state)
         else:
             raise ValueError(f"Unsupported classifier type: {classifier_type}")
+        return base_estimator
 
-        cls_range = ClassifierRange(base_cls=base_estimator, positive=self.config.positive_author)
-        return cls_range
+    def prepare_range_classifier(self):
+        return ClassifierRange(base_cls=self.new_classifier(), positive=self.config.positive_author)
 
-
-    def model_selection(self, train_documents: List[Book], save_hyper_path:str=None, refit=True):
-
+    def model_selection(self, train_documents: List[Book], test_documents: List[Book], save_hyper_path:str=None, refit=True):
         X, y, slices, groups = self.prepare_X_y(train_documents)
 
         # model selection
-        cls_range = self.prepare_classifier()
+        cls_range = self.prepare_range_classifier()
 
         mod_selection = GridSearchCV(
             estimator=cls_range,
@@ -278,6 +277,13 @@ class AuthorshipVerification:
                 'feat_k_freq_words': [slices['feat_k_freq_words'], None],
                 'rebalance_ratio': [None]
             },
+            # param_grid={
+            #     # 'positive': self.config.positive_author,
+            #     'C': [1],
+            #     'class_weight': ['balanced'],
+            #     'feat_funct_words': [slices['feat_funct_words'], None],
+            #     'feat_post': [slices['feat_post'], None],
+            # },
             cv=LeaveOneGroupOut(),
             refit=False,
             verbose=1,
@@ -300,6 +306,7 @@ class AuthorshipVerification:
             print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
             self.fit_classifier_range(X, y, cls_range, self.best_params)
 
+        # retains only feature slices not None
         feat_keys_selected = [
             k for k in self.best_params
             if k.startswith('feat_') and self.best_params[k] is not None
@@ -307,26 +314,41 @@ class AuthorshipVerification:
         if len(feat_keys_selected) == 0:
             raise ValueError("Model selection kept no feature blocks — check param_grid / data.")
 
-        blocks = [X[:, self.best_params[k]] for k in feat_keys_selected]
-        func = (np.hstack
-                if all(isinstance(b, np.ndarray) for b in blocks)
-                else scipy.sparse.hstack)
-        X_selected = func(blocks)
+        # extracts slices from X
+        def extract_selected(X, feat_keys_selected):
+            blocks = [X[:, self.best_params[k]] for k in feat_keys_selected]
+            func = (np.hstack
+                    if all(isinstance(b, np.ndarray) for b in blocks)
+                    else scipy.sparse.hstack)
+            X_selected = func(blocks)
+            return X_selected
 
+        # process train:
+        X_selected = extract_selected(X, feat_keys_selected)
+
+        # process test:
+        X_test = self.feature_extraction_transform([book.processed for book in test_documents])
+        X_test_selected = extract_selected(X_test, feat_keys_selected)
+
+        new_slices = {}
         offset = 0
         for k in feat_keys_selected:
             orig_slice = self.best_params[k]
             width = orig_slice.stop - orig_slice.start
-            self.best_params[k] = slice(offset, offset + width)
+            # self.best_params[k] = slice(offset, offset + width)
+            new_slices[k] = slice(offset, offset + width)
             offset += width
+        new_hyperparams_optim = {k:v for k,v in self.best_params.items() if not k.startswith('feat_')}
+        new_hyperparams_optim = {**new_hyperparams_optim, **new_slices}
 
         print(f"shape X_select: {X_selected.shape}")
 
         if refit:
             print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
-            self.fit_classifier_range(X_selected, y, cls_range, self.best_params)
+            self.fit_classifier_range(X_selected, y, cls_range, new_hyperparams_optim)
 
-        return X_selected, y, slices, groups, self.best_params, self.best_score
+
+        return X_selected, X_test_selected, y, groups, new_hyperparams_optim, self.best_score
 
 
     def fit_classifier_range(self, X, y, cls:BaseEstimator, hyperparams:dict):
@@ -350,7 +372,7 @@ class AuthorshipVerification:
                     hyperparams[feat] = slices[feat]
 
         assert_coherent_slices(slices, hyperparams)
-        cls_range = self.prepare_classifier()
+        cls_range = self.prepare_range_classifier()
         print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
         self.fit_classifier_range(X, y, cls_range, hyperparams)
         return X, y, slices, groups, self.best_params, self.best_score

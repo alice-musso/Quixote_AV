@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from sklearn.base import BaseEstimator
 
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 from sklearn.metrics import f1_score
@@ -45,6 +46,7 @@ def binarize_labels_for_topic(books: List[Book], target_title):
                 documents.append(fragment)
                 labels.append(label)
                 groups.append(g)
+    labels = np.asarray(labels)
 
     return documents, labels, groups
 
@@ -61,7 +63,7 @@ def compute_feature_ranking(X, y, tsr_metric):
     feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx] > 0]
     return feat_idx_importance, tsr_matrix
 
-def ablation(feat_idx_importance, tsr_matrix, X, y, groups):
+def ablation(feat_idx_importance, tsr_matrix, X, X_test, y, groups, classifier: BaseEstimator):
 
     feats_used = X.shape[1]
     remove_at_loop = 10
@@ -82,7 +84,7 @@ def ablation(feat_idx_importance, tsr_matrix, X, y, groups):
     # loo.get_n_splits()
     while not degenerated and candidates:
         acc = cross_val_score(
-            estimator=LogisticRegressionCV(),
+            estimator=classifier,
             X=X, y=y,
             cv=LeaveOneGroupOut(),
             groups=groups,
@@ -102,9 +104,10 @@ def ablation(feat_idx_importance, tsr_matrix, X, y, groups):
         elif delete_pointer < len(feat_idx_importance):
             to_delete = feat_idx_importance[delete_pointer:delete_pointer + remove_at_loop]
             X[:, to_delete] = 0
+            X_test[:, to_delete] = 0
 
             # X.eliminate_zeros()
-            X = normalize(X, norm='l2', axis=1)
+            # X = normalize(X, norm='l2', axis=1)
             # Xte = normalize(Xte, norm='l2', axis=1)
             delete_pointer += remove_at_loop
             feats_used -= remove_at_loop
@@ -116,7 +119,7 @@ def ablation(feat_idx_importance, tsr_matrix, X, y, groups):
             print('stop: no more candidates to remove')
 
     print(f"X ablated has shape {X.shape}")
-    return X
+    return X, X_test
 
 @dataclass
 class Config:
@@ -131,24 +134,24 @@ class Config:
         args = parser.parse_args()
         return cls(**vars(args))
 
-if __name__ == '__main__':
-    config = Config.from_args()
-
-    train_corpus = load_corpus(config.train_dir, cache_path='../data_preparation/.cache')
-    train_corpus = binarize_title(train_corpus, target_title=config.target_title)
-
-    documents, y, groups = binarize_labels_for_topic(train_corpus)
-    vectorizer = FeaturesFrequentWords(max_features=3000,
-        remove_stopwords=list(get_spanish_function_words())
-    )
-    X = vectorizer.fit_transform(documents)
-    print(f'done {X.shape}')
-    vocabulary = vectorizer.vectorizer.get_feature_names_out()
-
-    tsr_metric = posneg_information_gain
-    #tsr_metric = gss
-    #tsr_metric = chi_square
-
-    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y, tsr_metric)
-
-    ablation(feat_idx_importance, tsr_matrix, X, y, groups)
+# if __name__ == '__main__':
+#     config = Config.from_args()
+#
+#     train_corpus = load_corpus(config.train_dir, cache_path='../data_preparation/.cache')
+#     train_corpus = binarize_title(train_corpus, target_title=config.target_title)
+#
+#     documents, y, groups = binarize_labels_for_topic(train_corpus)
+#     vectorizer = FeaturesFrequentWords(max_features=3000,
+#         remove_stopwords=list(get_spanish_function_words())
+#     )
+#     X = vectorizer.fit_transform(documents)
+#     print(f'done {X.shape}')
+#     vocabulary = vectorizer.vectorizer.get_feature_names_out()
+#
+#     tsr_metric = posneg_information_gain
+#     #tsr_metric = gss
+#     #tsr_metric = chi_square
+#
+#     feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y, tsr_metric)
+#
+#     ablation(feat_idx_importance, tsr_matrix, X, y, groups)

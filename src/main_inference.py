@@ -97,6 +97,7 @@ if __name__ == '__main__':
     #av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
 
     if config.positive_author == "Cervantes":
+         raise RuntimeError('not revised, has changed')
          av_system.model_selection(train_corpus, save_hyper_path=config.hyperparams_save)
     else:
         hyper_path = Path(config.hyperparams_save)

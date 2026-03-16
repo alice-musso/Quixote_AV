@@ -5,7 +5,12 @@ import argparse
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
 import spacy
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import make_scorer, f1_score
+from sklearn.model_selection import GridSearchCV, cross_val_score, LeaveOneGroupOut
 
 from commons import AuthorshipVerification
 from data_preparation.data_loader import load_corpus, binarize_corpus, binarize_title
@@ -83,9 +88,11 @@ if __name__ == '__main__':
     # Feature-block selection for authorship verification ('Cervantes')
     # --------------------------------------------------------------------------------------------
     if config.positive_author == "Cervantes":
-        X_select, y, slices, groups, best_params, best_score = av_system.model_selection(
-            train_corpus, save_hyper_path=config.hyperparams_save, refit=False
+        X_select, X_test_select, y, groups, best_params, best_score = av_system.model_selection(
+            train_corpus, test_corpus, save_hyper_path=config.hyperparams_save, refit=False
         )
+
+
     else:
         raise NotImplementedError('not yet revised')
         hyper_path = Path(config.hyperparams_save)
@@ -99,12 +106,14 @@ if __name__ == '__main__':
     # Feature ablation for topic removal ('Quixote')
     # --------------------------------------------------------------------------------------------
     # q_corpus = binarize_title(train_corpus, target_title="Quijote")
-    # carico il train e poi gli chiedo di trasformare la label titolo in Quijiote vs not
+    # carico il train e poi gli chiedo di trasformare la label titolo in Quijote vs not
     documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
     feat_idx_importance, tsr_matrix = compute_feature_ranking(X_select, y_quixote, tsr_metric=posneg_information_gain)
 
     #vocabulary = "??????"
-    X_clean = ablation(feat_idx_importance, tsr_matrix, X_select, y_quixote, groups)
+    best_cls_params = {'C': best_params['C'], 'class_weight': best_params['class_weight']}
+    classifier = av_system.new_classifier().set_params(**best_cls_params)
+    X_clean, X_test_clean = ablation(feat_idx_importance, tsr_matrix, X_select, X_test_select, y_quixote, groups, classifier)
     #todo: restituire davvero la X pulita, senza le feature
 
     #fare un nuovo fit con la matrice pulita
@@ -113,24 +122,55 @@ if __name__ == '__main__':
 
     # Leave-one-out performance check for authorship verification ('Cervantes') after ablation
     # --------------------------------------------------------------------------------------------
-    cls_range = av_system.prepare_classifier()
-    av_system.best_params = best_params
-    av_system.best_score = None
-    av_system.fit_classifier_range(X_clean, y, cls_range, best_params)
-
-    print("\nRunning inference on test corpus …")
-    predicted_authors, posteriors = av_system.predict(
-        test_corpus, return_posteriors=True
+    f1_score_post_cleaning = cross_val_score(
+        estimator=av_system.new_classifier(),
+        X=X_clean,
+        y=y,
+        groups=groups,
+        cv=LeaveOneGroupOut(),
+        scoring=make_scorer(f1_score, pos_label=av_system.config.positive_author, zero_division=1.0),
+        n_jobs=-1
     )
+    f1_score_post_cleaning = np.mean(f1_score_post_cleaning)
 
-    #todo: fare il predict con la matrice giusta
+    print(f'F1-pre-clean:  {best_score:.4f}')
+    print(f'F1-post-clean: {f1_score_post_cleaning:.4f}')
 
-    pos_idx = av_system.index_of_author(config.positive_author)
 
-    print("\nInference results:")
-    for i, book in enumerate(test_corpus):
-        print(
-            f'  "{book.title}"  author={book.author}  '
-            f"predicted={predicted_authors[i]}  "
-            f"posterior={posteriors[i, pos_idx]:.4f}"
-        )
+    # final prediction
+    # --------------------------------------------------------------------------------------------
+    classifier = av_system.new_classifier().set_params(**best_cls_params)
+    calibrated_classifier = CalibratedClassifierCV(
+        classifier,
+        cv=10,
+        # method="isotonic",
+        method="sigmoid",
+        n_jobs=-1,
+    ).fit(X_clean, y)
+
+    y_probs = calibrated_classifier.predict_proba(X_test_clean)
+    for y_probs_i, book in zip(y_probs, test_corpus):
+        print(f'title={book.title}: got posterior = {y_probs_i}')
+
+
+    # cls_range = av_system.prepare_range_classifier()
+    # av_system.best_params = best_params
+    # av_system.best_score = None
+    # av_system.fit_classifier_range(X_clean, y, cls_range, best_params)
+    #
+    # print("\nRunning inference on test corpus …")
+    # predicted_authors, posteriors = av_system.predict(
+    #     test_corpus, return_posteriors=True
+    # )
+    #
+    # #todo: fare il predict con la matrice giusta
+    #
+    # pos_idx = av_system.index_of_author(config.positive_author)
+    #
+    # print("\nInference results:")
+    # for i, book in enumerate(test_corpus):
+    #     print(
+    #         f'  "{book.title}"  author={book.author}  '
+    #         f"predicted={predicted_authors[i]}  "
+    #         f"posterior={posteriors[i, pos_idx]:.4f}"
+    #     )

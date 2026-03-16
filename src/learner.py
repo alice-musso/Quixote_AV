@@ -102,8 +102,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
 
         y_bin = (np.asarray(y) == self.positive).astype(int)
         X, y_bin, idx = self._extract_all(X, y_bin)
-        self.base_cls = clone(self.base_cls)
-        self.set_params(C=self.C, class_weight=self.class_weight)
+        self.base_cls = clone(self.base_cls).set_params(C=self.C, class_weight=self.class_weight)
 
         if self.calibrate:
             self.calib = CalibratedClassifierCV(
