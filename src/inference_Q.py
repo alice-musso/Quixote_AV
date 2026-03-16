@@ -83,7 +83,7 @@ if __name__ == '__main__':
     # Feature-block selection for authorship verification ('Cervantes')
     # --------------------------------------------------------------------------------------------
     if config.positive_author == "Cervantes":
-        X, y, slices, groups, best_params, best_score = av_system.model_selection(
+        X_select, y, slices, groups, best_params, best_score = av_system.model_selection(
             train_corpus, save_hyper_path=config.hyperparams_save, refit=False
         )
     else:
@@ -101,10 +101,11 @@ if __name__ == '__main__':
     # q_corpus = binarize_title(train_corpus, target_title="Quijote")
     # carico il train e poi gli chiedo di trasformare la label titolo in Quijiote vs not
     documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
-    feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y_quixote, tsr_metric=posneg_information_gain)
+    feat_idx_importance, tsr_matrix = compute_feature_ranking(X_select, y_quixote, tsr_metric=posneg_information_gain)
 
-    vocabulary = "??????"
-    X_clean = ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y_quixote, groups)
+    #vocabulary = "??????"
+    X_clean = ablation(feat_idx_importance, tsr_matrix, X_select, y_quixote, groups)
+    #todo: restituire davvero la X pulita, senza le feature
 
     #fare un nuovo fit con la matrice pulita
     #fare la loo nuova
@@ -116,12 +117,14 @@ if __name__ == '__main__':
     av_system.best_params = best_params
     av_system.best_score = None
     av_system.fit_classifier_range(X_clean, y, cls_range, best_params)
-    av_system.leave_one_out(train_corpus)
 
     print("\nRunning inference on test corpus …")
     predicted_authors, posteriors = av_system.predict(
         test_corpus, return_posteriors=True
     )
+
+    #todo: fare il predict con la matrice giusta
+
     pos_idx = av_system.index_of_author(config.positive_author)
 
     print("\nInference results:")

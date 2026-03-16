@@ -48,6 +48,8 @@ import warnings
 from src.feature_extraction.features import FeaturesCharNGram
 
 warnings.filterwarnings("ignore")
+import scipy
+from scipy.sparse import hstack
 
 import pandas as pd
 import os
@@ -274,7 +276,7 @@ class AuthorshipVerification:
                 'feat_dep': [slices['feat_dep'], None],
                 'feat_char': [slices['feat_char'], None],
                 'feat_k_freq_words': [slices['feat_k_freq_words'], None],
-                'rebalance_ratio': [0.5, None]
+                'rebalance_ratio': [None]
             },
             cv=LeaveOneGroupOut(),
             refit=False,
@@ -298,8 +300,33 @@ class AuthorshipVerification:
             print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
             self.fit_classifier_range(X, y, cls_range, self.best_params)
 
+        feat_keys_selected = [
+            k for k in self.best_params
+            if k.startswith('feat_') and self.best_params[k] is not None
+        ]
+        if len(feat_keys_selected) == 0:
+            raise ValueError("Model selection kept no feature blocks — check param_grid / data.")
 
-        return X, y, feature_names, groups, self.best_params, self.best_score
+        blocks = [X[:, self.best_params[k]] for k in feat_keys_selected]
+        func = (np.hstack
+                if all(isinstance(b, np.ndarray) for b in blocks)
+                else scipy.sparse.hstack)
+        X_selected = func(blocks)
+
+        offset = 0
+        for k in feat_keys_selected:
+            orig_slice = self.best_params[k]
+            width = orig_slice.stop - orig_slice.start
+            self.best_params[k] = slice(offset, offset + width)
+            offset += width
+
+        print(f"shape X_select: {X_selected.shape}")
+
+        if refit:
+            print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+            self.fit_classifier_range(X_selected, y, cls_range, self.best_params)
+
+        return X_selected, y, slices, groups, self.best_params, self.best_score
 
 
     def fit_classifier_range(self, X, y, cls:BaseEstimator, hyperparams:dict):
@@ -446,42 +473,6 @@ class AuthorshipVerification:
 
         else:
             return y_predicted
-
-    def fit_and_predict_matrix(
-            self,
-            X_clean,
-            y: np.ndarray,
-            groups,
-            best_params: dict,
-            train_corpus,
-            test_corpus
-    ):
-        """
-        Fit ClassifierRange with the winning hyperparameters (from step 1) on
-        X_clean, run LOO evaluation, then predict on the test corpus.
-        """
-
-        cls_range = self.prepare_classifier()
-        self.best_params = best_params
-        self.best_score = None
-        self.fit_classifier_range(X_clean, y, cls_range, best_params)
-
-        print("\nRunning leave-one-out evaluation …")
-        self.leave_one_out(train_corpus)
-
-        print("\nRunning inference on test corpus …")
-        predicted_authors, posteriors = self.predict(
-            test_corpus, return_posteriors=True
-        )
-        pos_idx = self.index_of_author(self.positive_author)
-
-        print("\nInference results:")
-        for i, book in enumerate(test_corpus):
-            print(
-                f'  "{book.title}"  author={book.author}  '
-                f"predicted={predicted_authors[i]}  "
-                f"posterior={posteriors[i, pos_idx]:.4f}"
-            )
 
     @property
     def classes(self):

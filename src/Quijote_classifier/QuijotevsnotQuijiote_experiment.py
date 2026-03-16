@@ -61,7 +61,7 @@ def compute_feature_ranking(X, y, tsr_metric):
     feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx] > 0]
     return feat_idx_importance, tsr_matrix
 
-def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
+def ablation(feat_idx_importance, tsr_matrix, X, y, groups):
 
     feats_used = X.shape[1]
     remove_at_loop = 10
@@ -74,7 +74,7 @@ def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
     candidates = True
     # first = True
     X = X.toarray()
-    titles = [b.title for b in train_corpus]
+    #titles = [b.title for b in train_corpus]
     # label_assignments = [(title, label) for title, label in zip(titles, y)]
     # print(f'{label_assignments=}')
 
@@ -90,8 +90,8 @@ def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
             n_jobs=-1,
         )
 
-        for (acc_i, title_i) in zip(acc, titles):
-            print(f'classification accuracy for {title_i} is {acc_i * 100:.2f}%')
+        #for (acc_i, title_i) in zip(acc, titles):
+        #    print(f'classification accuracy for {title_i} is {acc_i * 100:.2f}%')
         acc = acc.mean()
 
         print(f'Acc={acc * 100:.2f}% num-feats={feats_used}')
@@ -108,12 +108,15 @@ def ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups):
             # Xte = normalize(Xte, norm='l2', axis=1)
             delete_pointer += remove_at_loop
             feats_used -= remove_at_loop
-            print(f'deleting: {[f"{vocabulary[i]} ({tsr_matrix[i]:.2f})" for i in to_delete]}')
+            print(f'deleting cadidates'
+                  #f'{[f"{vocabulary[i]} ({tsr_matrix[i]:.2f})" for i in to_delete]}'
+                  )
         else:
             candidates = False
             print('stop: no more candidates to remove')
 
-            return X
+    print(f"X ablated has shape {X.shape}")
+    return X
 
 @dataclass
 class Config:
@@ -148,4 +151,4 @@ if __name__ == '__main__':
 
     feat_idx_importance, tsr_matrix = compute_feature_ranking(X, y, tsr_metric)
 
-    ablation(feat_idx_importance, vocabulary, tsr_matrix, X, y, groups)
+    ablation(feat_idx_importance, tsr_matrix, X, y, groups)
