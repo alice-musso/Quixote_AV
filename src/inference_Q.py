@@ -50,6 +50,7 @@ class ModelConfig:
                             help='Filename for saving results for the leave one out whole books + segments')
         parser.add_argument('--hyperparams-save', default='../hyperparams/hyperparameters_posauth_Cervantes.pkl')
         parser.add_argument('--classifier-type', choices=["lr", "svm"], default='lr')
+        parser.add_argument('--load-hyperparams', default=True, action='store_false')
 
         args = parser.parse_args()
 
@@ -66,6 +67,7 @@ class ModelConfig:
         config.results_loo = str(Path(args.results_loo).parent /
                                  f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
         config.hyperparams_save = str(Path(args.hyperparams_save).parent / f"hyperparameters_posauth_Cervantes.pkl")
+        config.load_hyperparams = args.load_hyperparams
         for path in [config.results_inference, config.results_loo, config.hyperparams_save]:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         return config
@@ -83,42 +85,32 @@ if __name__ == '__main__':
 
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
-    # _, _, slices, _ = av_system.prepare_X_y(train_corpus)
 
     # Feature-block selection for authorship verification ('Cervantes')
     # --------------------------------------------------------------------------------------------
-    if config.positive_author == "Cervantes":
+    if not config.load_hyperparams:
         X_select, X_test_select, y, groups, best_params, best_score = av_system.model_selection(
             train_corpus, test_corpus, save_hyper_path=config.hyperparams_save, refit=False
         )
-
-
     else:
-        raise NotImplementedError('not yet revised')
         hyper_path = Path(config.hyperparams_save)
         if not hyper_path.exists():
             raise FileNotFoundError(f"{hyper_path} does not exist")
-        with hyper_path.oper("rb") as f:
+        with hyper_path.open("rb") as f:
             hyperparams = pickle.load(f)
-        X, y, slices, groups, best_params, best_score = av_system.fit_with_hyperparams(train_corpus, hyperparams=hyperparams)
-
+        X_select, y, slices, groups, best_params, best_score = av_system.fit_with_hyperparams(train_corpus,
+                                                                                       hyperparams=hyperparams)
+    #else:
+        #raise NotImplementedError('not yet revised')
 
     # Feature ablation for topic removal ('Quixote')
     # --------------------------------------------------------------------------------------------
-    # q_corpus = binarize_title(train_corpus, target_title="Quijote")
-    # carico il train e poi gli chiedo di trasformare la label titolo in Quijote vs not
     documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
     feat_idx_importance, tsr_matrix = compute_feature_ranking(X_select, y_quixote, tsr_metric=posneg_information_gain)
 
-    #vocabulary = "??????"
     best_cls_params = {'C': best_params['C'], 'class_weight': best_params['class_weight']}
     classifier = av_system.new_classifier().set_params(**best_cls_params)
     X_clean, X_test_clean = ablation(feat_idx_importance, tsr_matrix, X_select, X_test_select, y_quixote, groups, classifier)
-    #todo: restituire davvero la X pulita, senza le feature
-
-    #fare un nuovo fit con la matrice pulita
-    #fare la loo nuova
-    #fare la predizione e salvarla
 
     # Leave-one-out performance check for authorship verification ('Cervantes') after ablation
     # --------------------------------------------------------------------------------------------
@@ -151,26 +143,3 @@ if __name__ == '__main__':
     y_probs = calibrated_classifier.predict_proba(X_test_clean)
     for y_probs_i, book in zip(y_probs, test_corpus):
         print(f'title={book.title}: got posterior = {y_probs_i}')
-
-
-    # cls_range = av_system.prepare_range_classifier()
-    # av_system.best_params = best_params
-    # av_system.best_score = None
-    # av_system.fit_classifier_range(X_clean, y, cls_range, best_params)
-    #
-    # print("\nRunning inference on test corpus …")
-    # predicted_authors, posteriors = av_system.predict(
-    #     test_corpus, return_posteriors=True
-    # )
-    #
-    # #todo: fare il predict con la matrice giusta
-    #
-    # pos_idx = av_system.index_of_author(config.positive_author)
-    #
-    # print("\nInference results:")
-    # for i, book in enumerate(test_corpus):
-    #     print(
-    #         f'  "{book.title}"  author={book.author}  '
-    #         f"predicted={predicted_authors[i]}  "
-    #         f"posterior={posteriors[i, pos_idx]:.4f}"
-    #     )
