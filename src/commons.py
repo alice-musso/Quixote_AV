@@ -5,10 +5,7 @@ import spacy
 from sklearn.base import BaseEstimator, clone
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import (LogisticRegression)
-from sklearn.model_selection import (StratifiedGroupKFold,
-                                     GridSearchCV,
-                                     LeaveOneGroupOut,
-                                     )
+from sklearn.model_selection import GridSearchCV, cross_val_score, LeaveOneGroupOut
 from sklearn.svm import LinearSVC
 from sklearn.metrics import (
     f1_score, 
@@ -362,21 +359,57 @@ class AuthorshipVerification:
         print('[done]')
         return self, X
 
-    def fit_with_hyperparams(self, train_documents: List[Book], hyperparams: dict):
+    def fit_with_hyperparams(self, train_documents: List[Book], hyperparams: dict, test_documents: List[Book] = None,
+                             refit = True):
         X, y, slices, groups = self.prepare_X_y(train_documents)
 
         def assert_coherent_slices(slices, hyperparams):
             for feat, slice in hyperparams.items():
                 if slice is not None and feat.startswith('feat'):
-                    # assert slice == slices[feat], f'wrong slices for feat {feat}'
                     hyperparams[feat] = slices[feat]
 
         assert_coherent_slices(slices, hyperparams)
-        cls_range = self.prepare_range_classifier()
-        print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
-        self.fit_classifier_range(X, y, cls_range, hyperparams)
-        return X, y, slices, groups, self.best_params, self.best_score
+        self.best_params = hyperparams
 
+        feat_keys_selected = [
+            k for k in hyperparams if k.startswith('feat_') and hyperparams[k] is not None
+        ]
+
+        def extract_selected(X_mat, feat_keys):
+            blocks = [X_mat[:, hyperparams[k]] for k in feat_keys]
+            func = (np.hstack
+                    if all(isinstance(b, np.ndarray) for b in blocks)
+                    else scipy.sparse.hstack)
+            return func(blocks)
+
+        X_select = extract_selected(X, feat_keys_selected)
+        print(f"shape X_select: {X_select.shape}")
+
+        X_test_select = None
+        if test_documents is not None:
+            X_test = self.feature_extraction_transform([book.processed for book in test_documents])
+            X_test_select = extract_selected(X_test, feat_keys_selected)
+
+        cls_range = self.prepare_range_classifier()
+
+        # recompute CV score with hyperparams already set on the estimator
+        cv_scores = cross_val_score(
+            estimator=clone(cls_range).set_params(**{k: v for k, v in hyperparams.items() if k != 'calibrate'}),
+            X=X_select,
+            y=y,
+            groups=groups,
+            cv=LeaveOneGroupOut(),
+            scoring=make_scorer(f1_score, pos_label=self.config.positive_author, zero_division=1.0),
+            n_jobs=-1
+        )
+        self.best_score = np.mean(cv_scores)
+        print(f"CV F1 (from loaded hyperparams): {self.best_score:.4f}")
+
+        print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+        if refit:
+            print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
+            self.fit_classifier_range(X, y, cls_range, self.best_params)
+        return X_select, X_test_select, y, slices, groups, self.best_params, self.best_score
 
     def leave_one_out(self, train_documents: List[Book]):
         assert self.cls is not None, 'leave_one_out called before fit!'

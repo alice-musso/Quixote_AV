@@ -39,8 +39,8 @@ class ModelConfig:
     def from_args(cls):
         """Create config from command line args"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--train-dir', default='../corpus/training')
-        parser.add_argument('--test-dir', default='../corpus/test')
+        parser.add_argument('--train-dir', default='../../corpus/training')
+        parser.add_argument('--test-dir', default='../../corpus/test')
         parser.add_argument('--positive-author', default='Cervantes',
                             help='If indicated (default: Cervantes), binarizes the corpus, '
                                  'otherwise assumes multiclass classification')
@@ -50,7 +50,7 @@ class ModelConfig:
                             help='Filename for saving results for the leave one out whole books + segments')
         parser.add_argument('--hyperparams-save', default='../hyperparams/hyperparameters_posauth_Cervantes.pkl')
         parser.add_argument('--classifier-type', choices=["lr", "svm"], default='lr')
-        parser.add_argument('--load-hyperparams', default=True, action='store_false')
+        parser.add_argument('--load-hyperparams', default=False, action='store_true')
 
         args = parser.parse_args()
 
@@ -98,8 +98,8 @@ if __name__ == '__main__':
             raise FileNotFoundError(f"{hyper_path} does not exist")
         with hyper_path.open("rb") as f:
             hyperparams = pickle.load(f)
-        X_select, y, slices, groups, best_params, best_score = av_system.fit_with_hyperparams(train_corpus,
-                                                                                       hyperparams=hyperparams)
+        X_select, X_test_select, y, slices, groups, best_params, best_score = av_system.fit_with_hyperparams(train_corpus,
+                                                                                       hyperparams=hyperparams, test_documents =test_corpus, refit = False)
     #else:
         #raise NotImplementedError('not yet revised')
 
