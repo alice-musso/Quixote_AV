@@ -106,11 +106,13 @@ if __name__ == '__main__':
     # Feature ablation for topic removal ('Quixote')
     # --------------------------------------------------------------------------------------------
     documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
-    feat_idx_importance, tsr_matrix = compute_feature_ranking(X_select, y_quixote, tsr_metric=posneg_information_gain)
+    feat_idx_importance, tsr_matrix = compute_feature_ranking(X_select, y_quixote, tsr_metric=posneg_information_gain,
+                                                              random_state=config.random_state)
 
     best_cls_params = {'C': best_params['C'], 'class_weight': best_params['class_weight']}
     classifier = av_system.new_classifier().set_params(**best_cls_params)
-    X_clean, X_test_clean = ablation(feat_idx_importance, tsr_matrix, X_select, X_test_select, y_quixote, groups, classifier)
+    X_clean, X_test_clean = ablation(feat_idx_importance, tsr_matrix, X_select, X_test_select, y_quixote, groups,
+                                     classifier)
 
     # Leave-one-out performance check for authorship verification ('Cervantes') after ablation
     # --------------------------------------------------------------------------------------------
@@ -125,8 +127,21 @@ if __name__ == '__main__':
     )
     f1_score_post_cleaning = np.mean(f1_score_post_cleaning)
 
+    accuracy_score_post_cleaning = cross_val_score(
+        estimator=av_system.new_classifier(),
+        X=X_clean,
+        y=y,
+        groups=groups,
+        cv=LeaveOneGroupOut(),
+        scoring="accuracy",
+        n_jobs=-1
+    )
+    accuracy_score_post_cleaning = np.mean(accuracy_score_post_cleaning)
+
+    print(f'Accuracy-pre-clean: bho')
     print(f'F1-pre-clean:  {best_score:.4f}')
     print(f'F1-post-clean: {f1_score_post_cleaning:.4f}')
+    print(f'Accuracy-post-clean: {accuracy_score_post_cleaning:.4f}')
 
 
     # final prediction
@@ -138,6 +153,7 @@ if __name__ == '__main__':
         # method="isotonic",
         method="sigmoid",
         n_jobs=-1,
+        random_state = config.random_state
     ).fit(X_clean, y)
 
     y_probs = calibrated_classifier.predict_proba(X_test_clean)

@@ -7,8 +7,8 @@ import numpy as np
 from sklearn.base import BaseEstimator
 
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
-from sklearn.metrics import f1_score
-from sklearn.model_selection import train_test_split, GridSearchCV, LeaveOneGroupOut, LeaveOneOut, cross_val_score
+from sklearn.metrics import accuracy_score, f1_score, make_scorer
+from sklearn.model_selection import train_test_split, GridSearchCV, LeaveOneGroupOut, LeaveOneOut, cross_val_predict
 from sklearn.preprocessing import normalize
 from array import array
 from src.Quijote_classifier.supervised_term_weighting.tsr_functions import chi_square, get_supervised_matrix, get_tsr_matrix, posneg_information_gain, gss
@@ -50,10 +50,10 @@ def binarize_labels_for_topic(books: List[Book], target_title):
 
     return documents, labels, groups
 
-def compute_feature_ranking(X, y, tsr_metric):
+def compute_feature_ranking(X, y, tsr_metric, random_state:0):
 
     Xtr, Xte, ytr, yte = (
-        train_test_split(X, y, test_size=0.3, random_state=0)
+        train_test_split(X, y, test_size=0.3, random_state=random_state)
     )
 
     label_matrix = np.asarray(ytr).reshape(-1, 1)
@@ -83,20 +83,20 @@ def ablation(feat_idx_importance, tsr_matrix, X, X_test, y, groups, classifier: 
     # loo = LeaveOneGroupOut()
     # loo.get_n_splits()
     while not degenerated and candidates:
-        acc = cross_val_score(
+        y_pred = cross_val_predict(
             estimator=classifier,
             X=X, y=y,
             cv=LeaveOneGroupOut(),
             groups=groups,
-            scoring='accuracy',
-            n_jobs=-1,
+            n_jobs=-1
         )
-
+        acc = accuracy_score(y, y_pred)
+        f1 = f1_score(y, y_pred, pos_label=1, zero_division=1.0)
         #for (acc_i, title_i) in zip(acc, titles):
         #    print(f'classification accuracy for {title_i} is {acc_i * 100:.2f}%')
-        acc = acc.mean()
-
-        print(f'Acc={acc * 100:.2f}% num-feats={feats_used}')
+        #acc = acc.mean()
+        #f1 = f1.mean()
+        print(f'Acc={acc * 100:.2f}% F1={f1*100:.2f}% num-feats={feats_used}')
 
         if acc <= 0.55:
             degenerated = True
