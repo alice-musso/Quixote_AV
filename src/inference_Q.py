@@ -51,7 +51,7 @@ class ModelConfig:
         #                    help='Filename for saving results for the leave one out whole books + segments')
         parser.add_argument('--hyperparams-save', default='../hyperparams/hyperparameters_posauth_Cervantes.pkl')
         parser.add_argument('--classifier-type', choices=["lr", "svm"], default='lr')
-        parser.add_argument('--load-hyperparams', default=False, action='store_true')
+        parser.add_argument('--load-hyperparams', default=True, action='store_true')
 
         args = parser.parse_args()
 
@@ -175,8 +175,9 @@ if __name__ == '__main__':
 
     y_probs = calibrated_classifier.predict_proba(X_test_clean)
     results = {}
+    path = Path(config.results_inference).parent / "results.json"
     for y_probs_i, book in zip(y_probs, test_corpus):
         print(f'title={book.title}: got posterior = {y_probs_i}')
         results[book.title] = y_probs_i.tolist()
-    with open(config.results_inference, "w+", encoding='utf-8') as f:
+    with open(path, "w+", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
