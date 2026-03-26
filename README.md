@@ -1,58 +1,56 @@
-# Authorship Verification for Medieval Latin 
-This repository contains a system for authorship verification of medieval Latin texts, implementing feature extraction, distributional random oversampling, and classification algorithms to determine text authorship.
+# Quixote Authorship Verification
+
+This repository contains experiments for authorship verification focused on the Quixote corpus. The current codebase works on early modern Spanish texts, builds stylometric feature representations, and trains binary classifiers to distinguish a target author from all others.
+
+## What Is In Scope
+
+- Quixote authorship verification
+- Cervantes vs. non-Cervantes classification
+- Quijote topic-ablation experiments
+- Corpus loading, spaCy-based preprocessing, segmentation, feature extraction, model training, and inference
 
 ## Project Structure
 
-The project is organized into the following modules:
+- `src/data_preparation`: corpus loading, caching, and segmentation
+- `src/feature_extraction`: stylometric feature extractors
+- `src/oversampling`: DRO oversampling utilities
+- `src/authorship_verification.py`: feature preparation and model selection
+- `src/inference.py`: main Quixote inference workflow
+- `src/quijote_classifier/quijote_experiment.py`: Quijote topic-ablation utilities
+- `corpus/training`: training texts
+- `corpus/test`: test texts
+- `hyperparams`: saved hyperparameters
+- `results`: generated outputs
 
-- **data_preparation**: Contains tools for corpus loading and text segmentation
-- **feature_extraction**: Implements various feature extraction methods for text analysis
-- **oversampling**: Contains the Distributional Random Oversampling (DRO) algorithm and supporting functions
-- **main.py**: Main execution script for the authorship verification system
+## Environment
 
-## Requirements
+The code currently expects:
 
-The project comes with a _requirements.txt_ file. 
+- Python 3.11
+- spaCy with `es_dep_news_trf`
+- NLTK Spanish stopwords
+- scikit-learn, scipy, numpy, pandas, tqdm
 
-In case you want to create your own environment, follow these steps: Create a conda environment and install spaCy's _la_core_web_lg_ core. This core requires older versions of numpy,
-that should be installed before installing other packages such as scipy:
+The checked-in `requirements.txt` is a conda export of one working environment, not a minimal dependency list.
 
-```bash
-conda create -n questio python=3.10 -y
-conda activate questio
-pip install "numpy>=1.22.4,<1.29.0"
-pip install scipy gensim cltk spacy
-pip install "la-core-web-lg @ https://huggingface.co/latincy/la_core_web_lg/resolve/main/la_core_web_lg-any-py3-none-any.whl"
-```
+## Setup Notes
 
-You should also download some _nltk_ models:
+Install the spaCy Spanish pipeline and the required NLTK data in your environment.
 
 ```python
 import nltk
-nltk.download('punkt_tab')
+nltk.download("stopwords")
 ```
 
-This project also requires common packages:
+## Main Entry Point
 
+```bash
+cd src
+python -m inference \
+  --train-dir ../corpus/training \
+  --test-dir ../corpus/test \
+  --positive-author Cervantes \
+  --classifier-type lr
 ```
-scikit-learn
-nltk
-cltk
-tqdm
-```
 
-## Usage
-
-The system can be run in three modes based on the `--test-document` argument:
-
-1. Full Leave-One-Out:
-This runs verification on all documents in the corpus.
-
-2. Author-specific Leave-One-Out:
-This only processes documents by the specified author.
-
-3. Single Document Verification:
-This verifies only the specified document.
-
-The target author can be set with `--target`:
-By default, target author is "Dante" and test-document is empty (full LOO).
+Use `--no-load-hyperparams` to rerun model selection instead of loading a saved hyperparameter file.

@@ -3,8 +3,6 @@ import pickle
 from pathlib import Path
 from typing import List
 import spacy
-import re
-from collections import Counter
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import unicodedata
@@ -13,10 +11,9 @@ import unicodedata
 # ------------------------------------------------------------------------
 # document loading routine
 # ------------------------------------------------------------------------
-import nltk
 from nltk.corpus import stopwords
 
-from src.data_preparation.segmentation import Segmentator
+from data_preparation.segmentation import Segmentator
 
 
 def get_spanish_function_words():
@@ -24,17 +21,6 @@ def get_spanish_function_words():
     return stop_words_sp
 
 
-def get_author_from_path(path):
-    return path.name.split('-')[0].strip()
-
-
-def get_bookname_from_path(path):
-    return path.name.split('-')[1].strip()
-
-
-# ----------------------------------------------
-# Data helpers
-# ----------------------------------------------
 class Book:
 
     def __init__(self, path):
@@ -151,29 +137,9 @@ def load_corpus(path: str, cache_path='./data_preparation/.cache'):
 
 def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
     for book in corpus:
-        #print(f'{book.author} -> {positive_author}')
         if book.author != positive_author:
             book.author = 'Not' + positive_author
     return corpus
-
-def binarize_title(corpus: List["Book"], target_title ='Quijote'):
-    """Binarize book titles based on target title."""
-    for book in corpus:
-        if target_title.lower() in book.title.lower():
-            book.title = target_title
-        else:
-            book.title = 'Not' + target_title
-    return corpus
-
-def remove_unique_authors(corpus: List[Book]):
-    counts = Counter(book.author for book in corpus)
-    return [book for book in corpus if counts[book.author]>1]
-
-def _remove_single_author_texts(corpus: list[dict]) -> list[dict]:
-    """Remove texts by authors who only have one work."""
-    author_counts = Counter(doc['author'] for doc in corpus)
-    return [doc for doc in corpus if author_counts[doc['author']] > 1]
-
 
 
 

@@ -2,8 +2,6 @@
 
 mkdir -p results/outputs
 mkdir -p results/inference
-mkdir -p results/loo
-
 BASE_DIR=$(dirname "$0")
 BASE_DIR=$(cd "$BASE_DIR" && pwd)
 
@@ -36,23 +34,14 @@ for AUTHOR in "${AUTHORS[@]}"; do
     echo ">>> Running inference for: $AUTHOR"
 
     for MODEL in "${MODEL_TYPE[@]}"; do
-        # IMPORTANTE: vai nella directory src dove si trova il file .pkl
         cd "$BASE_DIR/src"
 
-        # Usa percorsi assoluti per train/test/results
-        PYTHONPATH="$BASE_DIR/src:$BASE_DIR" python -m main_inference \
+        python -m inference \
             --train-dir="$TRAIN_DIR" \
             --test-dir="$TEST_DIR" \
             --positive-author="$AUTHOR_NORMALIZED" \
             --classifier-type="$MODEL" \
             --results-inference="$BASE_DIR/results/inference/dummy.csv" \
-            --results-loo="$BASE_DIR/results/loo/dummy.csv" \
             > "$BASE_DIR/results/outputs/output_${NAME_PATH}_${MODEL}.txt" 2>&1
-
-
-        ACTUAL_INFERENCE="$BASE_DIR/results/inference/results_${AUTHOR_NORMALIZED}_${MODEL}.csv"
-        ACTUAL_LOO="$BASE_DIR/results/loo/loo_results_${AUTHOR_NORMALIZED}_${MODEL}.csv"
-
     done
 done
-
