@@ -5,14 +5,15 @@ import argparse
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+import json
 
 import numpy as np
 import spacy
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import make_scorer, f1_score
-from sklearn.model_selection import GridSearchCV, cross_val_score, LeaveOneGroupOut
+from sklearn.metrics import make_scorer, f1_score, accuracy_score
+from sklearn.model_selection import GridSearchCV, cross_val_score, cross_val_predict, LeaveOneGroupOut
 
-from commons import AuthorshipVerification
+from commons import AuthorshipVerification, get_full_books
 from data_preparation.data_loader import load_corpus, binarize_corpus, binarize_title
 from Quijote_classifier.QuijotevsnotQuijiote_experiment import binarize_labels_for_topic, ablation, compute_feature_ranking
 from Quijote_classifier.supervised_term_weighting.tsr_functions import posneg_information_gain, gss, chi_square
@@ -39,15 +40,15 @@ class ModelConfig:
     def from_args(cls):
         """Create config from command line args"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--train-dir', default='../../corpus/training')
-        parser.add_argument('--test-dir', default='../../corpus/test')
+        parser.add_argument('--train-dir', default='../corpus/training_prova')
+        parser.add_argument('--test-dir', default='../corpus/test_prova')
         parser.add_argument('--positive-author', default='Cervantes',
                             help='If indicated (default: Cervantes), binarizes the corpus, '
                                  'otherwise assumes multiclass classification')
         parser.add_argument('--results-inference', default='../results/inference/results.csv',
                             help='Filename for saving results')
-        parser.add_argument('--results-loo', default='../results/loo/results.csv',
-                            help='Filename for saving results for the leave one out whole books + segments')
+        #parser.add_argument('--results-loo', default='../results/loo/results.csv',
+        #                    help='Filename for saving results for the leave one out whole books + segments')
         parser.add_argument('--hyperparams-save', default='../hyperparams/hyperparameters_posauth_Cervantes.pkl')
         parser.add_argument('--classifier-type', choices=["lr", "svm"], default='lr')
         parser.add_argument('--load-hyperparams', default=False, action='store_true')
@@ -64,8 +65,8 @@ class ModelConfig:
         config.classifier_type = args.classifier_type
         config.results_inference = str(Path(args.results_inference).parent /
                                        f"results_{config.positive_author}_{config.classifier_type}.csv")
-        config.results_loo = str(Path(args.results_loo).parent /
-                                 f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
+        #config.results_loo = str(Path(args.results_loo).parent /
+        #                         f"loo_results_{config.positive_author}_{config.classifier_type}.csv")
         config.hyperparams_save = str(Path(args.hyperparams_save).parent / f"hyperparameters_posauth_Cervantes.pkl")
         config.load_hyperparams = args.load_hyperparams
         for path in [config.results_inference, config.results_loo, config.hyperparams_save]:
@@ -103,6 +104,22 @@ if __name__ == '__main__':
     #else:
         #raise NotImplementedError('not yet revised')
 
+    # pre-ablation cross_val_predict ***
+    # --------------------------------------------------------------------------------------------
+    cls_pre = av_system.prepare_range_classifier().set_params(**best_params)
+    y_pred_pre = cross_val_predict(
+        estimator=av_system.prepare_range_classifier().set_params(**best_params),
+        X=X_select, y=y,
+        cv=LeaveOneGroupOut(), groups=groups, n_jobs=-1
+    )
+    acc_pre = accuracy_score(y, y_pred_pre)
+    f1_pre = f1_score(y, y_pred_pre, pos_label=config.positive_author, zero_division=1.0)
+    y_full_pre, yp_full_pre = get_full_books(y, y_pred_pre, groups)
+    acc_full_pre = accuracy_score(y_full_pre, yp_full_pre)
+    f1_full_pre = f1_score(y_full_pre, yp_full_pre, pos_label=config.positive_author, zero_division=1.0)
+    print(f'Books: Acc={acc_full_pre*100:.2f} % F1={f1_full_pre*100:.2f}%')
+    print(f"Segments+books Acc={acc_pre*100:.2f}%  F1: {f1_pre*100:.2f}%")
+
     # Feature ablation for topic removal ('Quixote')
     # --------------------------------------------------------------------------------------------
     documents, y_quixote, groups = binarize_labels_for_topic(train_corpus, target_title="Quijote")
@@ -111,38 +128,39 @@ if __name__ == '__main__':
 
     best_cls_params = {'C': best_params['C'], 'class_weight': best_params['class_weight']}
     classifier = av_system.new_classifier().set_params(**best_cls_params)
-    X_clean, X_test_clean = ablation(feat_idx_importance, tsr_matrix, X_select, X_test_select, y_quixote, groups,
+    X_clean, X_test_clean = ablation(feat_idx_importance, X_select, X_test_select, y_quixote, groups,
                                      classifier)
 
     # Leave-one-out performance check for authorship verification ('Cervantes') after ablation
     # --------------------------------------------------------------------------------------------
-    f1_score_post_cleaning = cross_val_score(
+    y_pred_post = cross_val_predict(
         estimator=av_system.new_classifier(),
         X=X_clean,
         y=y,
         groups=groups,
         cv=LeaveOneGroupOut(),
-        scoring=make_scorer(f1_score, pos_label=av_system.config.positive_author, zero_division=1.0),
         n_jobs=-1
     )
-    f1_score_post_cleaning = np.mean(f1_score_post_cleaning)
+    acc_post= accuracy_score(y, y_pred_post)
+    f1_post= f1_score(y, y_pred_post, pos_label=config.positive_author, zero_division=1.0)
+    y_full_post, yp_full_post = get_full_books(y, y_pred_post, groups)
+    acc_full_books = accuracy_score(y_full_post, yp_full_post)
+    f1_full_books = f1_score(y_full_post, yp_full_post, pos_label=config.positive_author, zero_division=1.0)
+    print(f'Books: Acc={acc_full_books * 100:.2f}% F1={f1_full_books * 100:.2f}%')
+    print(f"Segments+books Acc={acc_post * 100:.2f}% F1: {f1_post * 100:.2f}%")
 
-    accuracy_score_post_cleaning = cross_val_score(
-        estimator=av_system.new_classifier(),
-        X=X_clean,
-        y=y,
-        groups=groups,
-        cv=LeaveOneGroupOut(),
-        scoring="accuracy",
-        n_jobs=-1
-    )
-    accuracy_score_post_cleaning = np.mean(accuracy_score_post_cleaning)
-
-    print(f'Accuracy-pre-clean: bho')
-    print(f'F1-pre-clean:  {best_score:.4f}')
-    print(f'F1-post-clean: {f1_score_post_cleaning:.4f}')
-    print(f'Accuracy-post-clean: {accuracy_score_post_cleaning:.4f}')
-
+    score = {"Books accuracy pre-cleaning": acc_full_pre,
+    "Books F1 pre-cleaning": f1_full_pre,
+    "Segments + books accuracy pre-cleaning": acc_pre,
+    "Segments + books f1 pre-cleaning":f1_pre,
+    "Books accuracy post-cleaning": acc_full_books,
+    "Books F1 post-cleaning": f1_full_books,
+    "Segments + books accuracy post-cleaning": acc_post,
+    "Segments + books f1 post-cleaning": f1_post}
+    score_path = Path(config.results_inference).parent /"score.json"
+    score = {k: float(v) for k, v in score.items()}
+    with open(score_path, "w", encoding='utf-8') as f:
+        json.dump(score, f, indent=4)
 
     # final prediction
     # --------------------------------------------------------------------------------------------
@@ -153,9 +171,12 @@ if __name__ == '__main__':
         # method="isotonic",
         method="sigmoid",
         n_jobs=-1,
-        random_state = config.random_state
     ).fit(X_clean, y)
 
     y_probs = calibrated_classifier.predict_proba(X_test_clean)
+    results = {}
     for y_probs_i, book in zip(y_probs, test_corpus):
         print(f'title={book.title}: got posterior = {y_probs_i}')
+        results[book.title] = y_probs_i.tolist()
+    with open(config.results_inference, "w+", encoding='utf-8') as f:
+        json.dump(results, f, indent=4)

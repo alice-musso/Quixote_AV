@@ -79,7 +79,7 @@ if __name__ == '__main__':
     spacy_language_model = spacy.load('es_dep_news_trf')
     av_system = AuthorshipVerification(config, nlp=spacy_language_model)
 
-    _, _, slices, _ = av_system.prepare_X_y(train_corpus)
+    _, _, slices, _, _ = av_system.prepare_X_y(train_corpus)
     hyperparams={
         'C': 0.0001,
         'class_weight': None,

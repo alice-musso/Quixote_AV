@@ -17,6 +17,7 @@ from src.data_preparation.data_loader import load_corpus, binarize_title
 from src.feature_extraction.features import FeaturesFrequentWords
 from src.data_preparation.data_loader import Book, get_spanish_function_words
 from typing import List, Dict, Optional
+from src.commons import get_full_books
 
 warnings.filterwarnings("ignore")
 
@@ -50,7 +51,7 @@ def binarize_labels_for_topic(books: List[Book], target_title):
 
     return documents, labels, groups
 
-def compute_feature_ranking(X, y, tsr_metric, random_state:0):
+def compute_feature_ranking(X, y, tsr_metric, random_state = 0):
 
     Xtr, Xte, ytr, yte = (
         train_test_split(X, y, test_size=0.3, random_state=random_state)
@@ -63,7 +64,7 @@ def compute_feature_ranking(X, y, tsr_metric, random_state:0):
     feat_idx_importance = [idx for idx in feat_idx_importance if tsr_matrix[idx] > 0]
     return feat_idx_importance, tsr_matrix
 
-def ablation(feat_idx_importance, tsr_matrix, X, X_test, y, groups, classifier: BaseEstimator):
+def ablation(feat_idx_importance, X, X_test, y, groups, classifier: BaseEstimator):
 
     feats_used = X.shape[1]
     remove_at_loop = 10
@@ -92,11 +93,15 @@ def ablation(feat_idx_importance, tsr_matrix, X, X_test, y, groups, classifier: 
         )
         acc = accuracy_score(y, y_pred)
         f1 = f1_score(y, y_pred, pos_label=1, zero_division=1.0)
+        print(f'Books+Segments: Acc={acc * 100:.2f}% F1={f1 * 100:.2f}% num-feats={feats_used}')
+        #y_full, yp_full = get_full_books(y, y_pred, groups)
+        #print(
+        #    f'Books: Acc={accuracy_score(y_full, yp_full)*100:.2f}% '
+        #    f'F1={f1_score(y_full, yp_full, pos_label=1, zero_division=1.0)*100:.2f}%')
         #for (acc_i, title_i) in zip(acc, titles):
         #    print(f'classification accuracy for {title_i} is {acc_i * 100:.2f}%')
         #acc = acc.mean()
         #f1 = f1.mean()
-        print(f'Acc={acc * 100:.2f}% F1={f1*100:.2f}% num-feats={feats_used}')
 
         if acc <= 0.55:
             degenerated = True

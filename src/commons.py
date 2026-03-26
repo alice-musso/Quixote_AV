@@ -51,83 +51,98 @@ from scipy.sparse import hstack
 import pandas as pd
 import os
 
+def get_full_books(y, y_pred, groups):
+    groups = np.asarray(groups)
+    y = np.asarray(y)
+    y_pred = np.asarray(y_pred)
+
+    seen = set()
+    full_idx = []
+
+    for i, g in enumerate(groups):
+        if g not in seen:
+            full_idx.append(i)
+            seen.add(g)
+
+    return y[full_idx], y_pred[full_idx]
+
 # ----------------------------------------------
 # Save results
 # ----------------------------------------------
 
-class SaveResults:
-    def __init__(self, config: "ModelConfig", mode: str = "inference"):
-        """
-        Handles saving results for both inference and leave-one-out (LOO) modes.
-
-        - In 'inference' mode: saves basic predictions (no metrics)
-        - In 'loo' mode: saves predictions + evaluation metrics (accuracy, f1, confusion matrix)
-        """
-        if mode not in ("inference", "loo"):
-            raise ValueError("mode must be 'inference' or 'loo'")
-
-        self.config = config
-        self.mode = mode
+#class SaveResults:
+#    def __init__(self, config: "ModelConfig", mode: str = "inference"):
+#        """
+#        Handles saving results for both inference and leave-one-out (LOO) modes.
+#
+#        - In 'inference' mode: saves basic predictions (no metrics)
+#        - In 'loo' mode: saves predictions + evaluation metrics (accuracy, f1, confusion matrix)
+#        """
+#        if mode not in ("inference", "loo"):
+#            raise ValueError("mode must be 'inference' or 'loo'")
+#
+#        self.config = config
+#        self.mode = mode
 
         # Columns depend on the mode
-        if mode == "loo":
-            columns = [
-                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type",
-                "accuracy", "TN", "FP", "FN", "TP"
-            ]
-        elif mode == "inference":  # inference mode
-            columns = [
-                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "best_score", "type"
-            ]
+#        if mode == "loo":
+#            columns = [
+#                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "type",
+#                "accuracy", "TN", "FP", "FN", "TP"
+#            ]
+#        elif mode == "inference":  # inference mode
+#            columns = [
+#                "best_params", "booktitle", "author", "predictedauthor", "posterior_prob", "best_score", "type"
+#            ]
+#
+#        self.df = pd.DataFrame(columns=columns)
 
-        self.df = pd.DataFrame(columns=columns)
+#    def add_result(
+#            self,
+#            best_params,
+#            booktitle,
+#            author,
+#            predictedauthor,
+#            posterior_prob,
+#            type,
+#            accuracy=None,
+#            best_score=None,
+#            TN=None,
+#            FP=None,
+#            FN=None,
+#            TP=None,
+#    ):
+#        new_row = {
+#            "best_params": best_params,
+#            "booktitle": booktitle,
+#            "author": author,
+#            "predictedauthor": predictedauthor,
+#            "posterior_prob": posterior_prob,
+#            "type": type,
+#        }
 
-    def add_result(
-            self,
-            best_params,
-            booktitle,
-            author,
-            predictedauthor,
-            posterior_prob,
-            type,
-            accuracy=None,
-            best_score=None,
-            TN=None,
-            FP=None,
-            FN=None,
-            TP=None,
-    ):
-        new_row = {
-            "best_params": best_params,
-            "booktitle": booktitle,
-            "author": author,
-            "predictedauthor": predictedauthor,
-            "posterior_prob": posterior_prob,
-            "type": type,
-        }
+#        if self.mode == "loo":
+#            new_row.update({
+#                "accuracy": accuracy,
+#                "TN": TN,
+#                "FP": FP,
+#                "FN": FN,
+#                "TP": TP,
+#            })
 
-        if self.mode == "loo":
-            new_row.update({
-                "accuracy": accuracy,
-                "TN": TN,
-                "FP": FP,
-                "FN": FN,
-                "TP": TP,
-            })
+ #       elif self.mode == "inference":
+ #           new_row["best_score"] = best_score
 
-        elif self.mode == "inference":
-            new_row["best_score"] = best_score
+ #       self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
 
-        self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
-
-    def save(self):
-        """Save the accumulated results to the appropriate CSV file."""
-        result_path = (
-            self.config.results_inference
-            if self.mode == "inference"
-            else self.config.results_loo
-        )
-        self.df.to_csv(result_path, index=False)
+#    def save(self):
+#        """Save the accumulated results to the appropriate CSV file."""
+#        result_path = (
+#            self.config.results_inference
+#            if self.mode == "inference"
+#            else self.config.results_loo
+#        )
+#        self.df.to_csv(result_path, index=False)
 
 class ModelEvaluator:
 
@@ -220,22 +235,6 @@ class AuthorshipVerification:
         X, y, slices = self.feature_extraction_fit(texts, labels)
         return X, y, slices, groups
 
-    #def prepare_X_y_title(self, train_documents: List[Book]):
-    #    texts = []
-    #    labels = []
-    #    groups = []
-    #    for i, book in enumerate(train_documents):
-    #       label = book.title
-    #        texts.append(book.processed)
-    #        labels.append(label)
-    #        groups.append(i)
-    #        for segment in book.segmented:
-    #            texts.append(segment)
-    #            labels.append(label)
-    #            groups.append(i)
-    #    X, y, slices = self.feature_extraction_fit(texts, labels)
-    #    return X, y, slices, groups
-
     def new_classifier(self):
         classifier_type = getattr(self.config, "classifier_type", "lr")
         print(f"Building classifier: {classifier_type}\n")
@@ -262,7 +261,9 @@ class AuthorshipVerification:
             param_grid={
                 # 'positive': self.config.positive_author,
                 'C': np.logspace(-4, 4, 9),
-                'class_weight': [None, 'balanced'],
+                'class_weight': [None
+                                 #,'balanced'
+                                 ],
                 'feat_funct_words': [slices['feat_funct_words'], None],
                 'feat_post': [slices['feat_post'], None],
                 'feat_mendenhall': [slices['feat_mendenhall'], None],
@@ -272,7 +273,9 @@ class AuthorshipVerification:
                 'feat_dep': [slices['feat_dep'], None],
                 'feat_char': [slices['feat_char'], None],
                 'feat_k_freq_words': [slices['feat_k_freq_words'], None],
-                'rebalance_ratio': [None]
+                'rebalance_ratio': [None
+                                    #,0.5
+                ]
             },
             # param_grid={
             #     # 'positive': self.config.positive_author,
@@ -344,7 +347,6 @@ class AuthorshipVerification:
             print(f"\nBuilding classifier: classifier calibration ({cls_range.__class__.__name__})\n")
             self.fit_classifier_range(X_selected, y, cls_range, new_hyperparams_optim)
 
-
         return X_selected, X_test_selected, y, groups, new_hyperparams_optim, self.best_score
 
 
@@ -412,6 +414,7 @@ class AuthorshipVerification:
         return X_select, X_test_select, y, slices, groups, self.best_params, self.best_score
 
     def leave_one_out(self, train_documents: List[Book]):
+        raise RuntimeError("to be revised")
         assert self.cls is not None, 'leave_one_out called before fit!'
 
         texts, labels, groups, titles, segment_flags = [], [], [], [], []
@@ -507,22 +510,22 @@ class AuthorshipVerification:
         if return_posteriors:
             posteriors = self.cls.predict_proba(X)
 
-            if self.config.results_inference:
-                saver = SaveResults(self.config, mode="inference")
-                for title, author, pred_author, posterior in zip(
-                        titles, labels, y_predicted, posteriors
-                ):
-                    positive_idx = self.index_of_author(self.config.positive_author)
-                    saver.add_result(
-                        best_params= self.best_params,
-                        best_score = self.best_score,
-                        booktitle=title,
-                        author=author,
-                        predictedauthor=pred_author,
-                        posterior_prob=posterior[positive_idx],
-                        type="full book"
-                    )
-                saver.save()
+            #if self.config.results_inference:
+            #    saver = SaveResults(self.config, mode="inference")
+            #    for title, author, pred_author, posterior in zip(
+            #            titles, labels, y_predicted, posteriors
+            #    ):
+            #        positive_idx = self.index_of_author(self.config.positive_author)
+            #        saver.add_result(
+            #            best_params= self.best_params,
+            #            best_score = self.best_score,
+            #            booktitle=title,
+            #            author=author,
+            #            predictedauthor=pred_author,
+            #            posterior_prob=posterior[positive_idx],
+            #            type="full book"
+            #        )
+            #    saver.save()
 
             return y_predicted, posteriors
 
