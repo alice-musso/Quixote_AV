@@ -270,7 +270,7 @@ class AuthorshipVerification:
                 estimator=cls_range,
                 param_grid={
                     "C": np.logspace(-4, 4, 9),
-                    "class_weight": [None],
+                    "class_weight": [None, "balanced"],
                     "feat_funct_words": [slices["feat_funct_words"], None],
                     "feat_post": [slices["feat_post"], None],
                     "feat_mendenhall": [slices["feat_mendenhall"], None],
@@ -280,11 +280,11 @@ class AuthorshipVerification:
                     "feat_dep": [slices["feat_dep"], None],
                     "feat_char": [slices["feat_char"], None],
                     "feat_k_freq_words": [slices["feat_k_freq_words"], None],
-                    "rebalance_ratio": [None],
+                    "rebalance_ratio": [None, 0.5],
                 },
                 cv=LeaveOneGroupOut(),
                 refit=False,
-                verbose=2,
+                verbose=1,
                 scoring=make_scorer(
                     f1_score,
                     pos_label=self.config.positive_author,

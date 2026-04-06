@@ -13,6 +13,7 @@ class ModelConfig:
     hyperparams_save: str
     classifier_type: str
     load_hyperparams: bool
+    skip_ablation: bool = False
     n_jobs: int = -1
     random_state: int = 0
     max_features: int = 5000
@@ -37,8 +38,14 @@ class ModelConfig:
         parser.add_argument(
             "--load-hyperparams",
             action=argparse.BooleanOptionalAction,
-            default=True,
+            default=False,
             help="Load saved hyperparameters; use --no-load-hyperparams to rerun model selection.",
+        )
+        parser.add_argument(
+            "--skip-ablation",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Skip the topic-ablation step; use --no-skip-ablation to re-enable it.",
         )
         args = parser.parse_args()
         return cls.from_namespace(args)
@@ -65,6 +72,7 @@ class ModelConfig:
             hyperparams_save=hyperparams_save,
             classifier_type=classifier_type,
             load_hyperparams=args.load_hyperparams,
+            skip_ablation=args.skip_ablation,
         )
         config.ensure_output_dirs()
         return config

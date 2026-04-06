@@ -1,7 +1,7 @@
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-
+import pandas as pd
 from scipy import sparse
 
 
@@ -191,21 +191,27 @@ class QuixoteInferenceExperiment:
             verifier_artifacts,
         )
 
-        ablation_artifacts = self._compute_ablation(
-            verifier,
-            verifier_artifacts,
-            corpora.train_corpus,
-        )
-        X_train_ablated, X_test_ablated = self._apply_ablation_to_verifier_data(
-            verifier_artifacts,
-            ablation_artifacts,
-        )
-
-        post_ablation_evaluation = self._evaluate_post_ablation(
-            verifier,
-            verifier_artifacts,
-            X_train_ablated,
-        )
+        if self.config.skip_ablation:
+            print("Ablation skipped.")
+            X_train_ablated = verifier_artifacts.X_train
+            X_test_ablated = verifier_artifacts.X_test
+            post_ablation_evaluation = pre_ablation_evaluation
+            ablation_artifacts = None
+        else:
+            ablation_artifacts = self._compute_ablation(
+                verifier,
+                verifier_artifacts,
+                corpora.train_corpus,
+            )
+            X_train_ablated, X_test_ablated = self._apply_ablation_to_verifier_data(
+                verifier_artifacts,
+                ablation_artifacts,
+            )
+            post_ablation_evaluation = self._evaluate_post_ablation(
+                verifier,
+                verifier_artifacts,
+                X_train_ablated,
+            )
 
         calibrated_classifier, probabilities = self._predict_test_probabilities(
             verifier,
@@ -233,7 +239,7 @@ class QuixoteInferenceExperiment:
                 test_corpus=corpora.test_corpus,
                 positive_author=self.config.positive_author,
             ),
-            ablation_table=build_ablation_table(ablation_artifacts),
+            ablation_table=build_ablation_table(ablation_artifacts) if ablation_artifacts is not None else pd.DataFrame(),
         )
         self._display_tables(
             score_table=tables.score_table,
