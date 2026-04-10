@@ -164,7 +164,7 @@ class QuixoteInferenceExperiment:
         self._print_evaluation("Post-ablation", evaluation)
         return evaluation
 
-    def _predict_test_probabilities(self, verifier, verifier_artifacts, X_train_ablated, X_test_ablated):
+    def _predict_test_probabilities(self, verifier, verifier_artifacts, X_train, X_test):
         from sklearn.calibration import CalibratedClassifierCV
 
         calibrated_classifier = CalibratedClassifierCV(
@@ -175,8 +175,8 @@ class QuixoteInferenceExperiment:
             cv=10,
             method="sigmoid",
             n_jobs=-1,
-        ).fit(X_train_ablated, verifier_artifacts.y)
-        probabilities = calibrated_classifier.predict_proba(X_test_ablated)
+        ).fit(X_train, verifier_artifacts.y)
+        probabilities = calibrated_classifier.predict_proba(X_test)
         return calibrated_classifier, probabilities
 
     def run(self):
@@ -213,7 +213,14 @@ class QuixoteInferenceExperiment:
                 X_train_ablated,
             )
 
-        calibrated_classifier, probabilities = self._predict_test_probabilities(
+        pre_ablation_classifier, pre_ablation_probabilities = self._predict_test_probabilities(
+            verifier,
+            verifier_artifacts,
+            verifier_artifacts.X_train,
+            verifier_artifacts.X_test,
+        )
+
+        post_ablation_classifier, post_ablation_probabilities = self._predict_test_probabilities(
             verifier,
             verifier_artifacts,
             X_train_ablated,
@@ -234,8 +241,10 @@ class QuixoteInferenceExperiment:
                 model_selection_score=verifier_artifacts.model_selection_score,
             ),
             prediction_table=build_prediction_table(
-                classifier=calibrated_classifier,
-                probabilities=probabilities,
+                pre_classifier=pre_ablation_classifier,
+                pre_probabilities=pre_ablation_probabilities,
+                post_classifier=post_ablation_classifier,
+                post_probabilities=post_ablation_probabilities,
                 test_corpus=corpora.test_corpus,
                 positive_author=self.config.positive_author,
             ),

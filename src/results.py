@@ -55,7 +55,7 @@ def build_score_table(pre_ablation_evaluation, post_ablation_evaluation, model_s
     return pd.DataFrame(rows)
 
 
-def build_prediction_table(classifier, probabilities, test_corpus, positive_author):
+def _prediction_columns(classifier, probabilities, positive_author, prefix):
     class_labels = list(classifier.classes_)
     probability_by_label = {
         label: probabilities[:, class_index]
@@ -66,16 +66,47 @@ def build_prediction_table(classifier, probabilities, test_corpus, positive_auth
         raise ValueError(f"{positive_author} not found in classifier classes {class_labels}")
 
     predicted_labels = [class_labels[row.argmax()] for row in probabilities]
+    columns = []
+    for row_index in range(len(probabilities)):
+        row = {
+            f"{prefix}_predicted_author": predicted_labels[row_index],
+            f"{prefix}_positive_author_probability": positive_probabilities[row_index],
+        }
+        for label in class_labels:
+            row[f"{prefix}_prob_{label}"] = probability_by_label[label][row_index]
+        columns.append(row)
+    return columns
+
+
+def build_prediction_table(
+    pre_classifier,
+    pre_probabilities,
+    post_classifier,
+    post_probabilities,
+    test_corpus,
+    positive_author,
+):
+    pre_rows = _prediction_columns(
+        classifier=pre_classifier,
+        probabilities=pre_probabilities,
+        positive_author=positive_author,
+        prefix="pre_ablation",
+    )
+    post_rows = _prediction_columns(
+        classifier=post_classifier,
+        probabilities=post_probabilities,
+        positive_author=positive_author,
+        prefix="post_ablation",
+    )
+
     rows = []
     for row_index, book in enumerate(test_corpus):
         row = {
             "title": book.title,
             "author": book.author,
-            "predicted_author": predicted_labels[row_index],
-            "positive_author_probability": positive_probabilities[row_index],
         }
-        for label in class_labels:
-            row[f"prob_{label}"] = probability_by_label[label][row_index]
+        row.update(pre_rows[row_index])
+        row.update(post_rows[row_index])
         rows.append(row)
     return pd.DataFrame(rows)
 
