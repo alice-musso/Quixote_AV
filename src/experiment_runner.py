@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import pandas as pd
 from scipy import sparse
+from scipy.stats import binom
 
 
 @dataclass
@@ -223,8 +224,15 @@ class QuixoteInferenceExperiment:
 
         X_train_current = verifier_artifacts.X_train.copy()
         X_test_current = verifier_artifacts.X_test.copy()
+        remaining_changes = len(rows)
 
         for deleted_order, feature_index in enumerate(deleted_features, start=1):
+            if remaining_changes == 0:
+                print(
+                    f"Decision tracing stopped early after {deleted_order - 1} deletions: "
+                    "all test books changed decision."
+                )
+                break
             X_train_current = zero_columns(X_train_current, [feature_index])
             X_test_current = zero_columns(X_test_current, [feature_index])
             classifier, probabilities = self._predict_test_probabilities(
@@ -246,6 +254,7 @@ class QuixoteInferenceExperiment:
                     row["change_feature_index"] = feature_index
                     row["change_feature_name"] = feature_name
                     row["post_change_predicted_author"] = label
+                    remaining_changes -= 1
 
         return pd.DataFrame(rows)
 
@@ -305,17 +314,6 @@ class QuixoteInferenceExperiment:
             build_score_table,
         )
 
-        decision_change_table = build_decision_change_table(
-            self._track_decision_changes(
-                verifier=verifier,
-                verifier_artifacts=verifier_artifacts,
-                test_corpus=corpora.test_corpus,
-                pre_ablation_classifier=pre_ablation_classifier,
-                pre_ablation_probabilities=pre_ablation_probabilities,
-                ablation_artifacts=ablation_artifacts,
-            ).to_dict(orient="records")
-        )
-
         tables = ExperimentTables(
             score_table=build_score_table(
                 pre_ablation_evaluation=pre_ablation_evaluation,
@@ -331,7 +329,7 @@ class QuixoteInferenceExperiment:
                 positive_author=self.config.positive_author,
             ),
             ablation_table=build_ablation_table(ablation_artifacts) if ablation_artifacts is not None else pd.DataFrame(),
-            decision_change_table=decision_change_table,
+            decision_change_table=pd.DataFrame(),
         )
         self._display_tables(
             score_table=tables.score_table,
@@ -339,6 +337,20 @@ class QuixoteInferenceExperiment:
             ablation_table=tables.ablation_table,
             decision_change_table=tables.decision_change_table,
         )
+
+        print("\nTracing decision changes...")
+        tables.decision_change_table = build_decision_change_table(
+            self._track_decision_changes(
+                verifier=verifier,
+                verifier_artifacts=verifier_artifacts,
+                test_corpus=corpora.test_corpus,
+                pre_ablation_classifier=pre_ablation_classifier,
+                pre_ablation_probabilities=pre_ablation_probabilities,
+                ablation_artifacts=ablation_artifacts,
+            ).to_dict(orient="records")
+        )
+        print("\nDecision change table:")
+        print(tables.decision_change_table.to_string(index=False))
         saved_results = self.result_writer.save_tables(tables)
 
         return ExperimentOutputs(
@@ -349,3 +361,8 @@ class QuixoteInferenceExperiment:
             prediction_table=tables.prediction_table,
             ablation_table=tables.ablation_table,
         )
+
+def threshold_accuracy(n, alpha=0.05, p0=0.5):
+    # k* = smallest k such that P(K >= k) <= alpha
+    k_star = binom.isf(alpha, n, p0)  # inverse survival function
+    return int(k_star), k_star / n
