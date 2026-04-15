@@ -66,13 +66,20 @@ class QuixoteInferenceExperiment:
             f"F1={evaluation.segments.f1 * 100:.2f}%"
         )
 
-    def _display_tables(self, score_table, prediction_table, ablation_table):
+    def _display_tables(self, score_table, prediction_table, ablation_table, decision_change_table):
         print("\nScore table:")
         print(score_table.to_string(index=False))
         print("\nPrediction table:")
         print(prediction_table.to_string(index=False))
         print("\nAblation table:")
         print(ablation_table.to_string(index=False))
+        print("\nDecision change table:")
+        print(decision_change_table.to_string(index=False))
+
+    def _predict_test_labels(self, classifier, probabilities):
+        class_labels = list(classifier.classes_)
+        predicted_indices = probabilities.argmax(axis=1)
+        return [class_labels[index] for index in predicted_indices]
 
     def _load_corpora(self):
         from data_preparation.data_loader import binarize_corpus, load_corpus
@@ -179,6 +186,69 @@ class QuixoteInferenceExperiment:
         probabilities = calibrated_classifier.predict_proba(X_test)
         return calibrated_classifier, probabilities
 
+    def _track_decision_changes(
+        self,
+        verifier,
+        verifier_artifacts,
+        test_corpus,
+        pre_ablation_classifier,
+        pre_ablation_probabilities,
+        ablation_artifacts,
+    ):
+        if ablation_artifacts is None:
+            return pd.DataFrame()
+
+        pre_labels = self._predict_test_labels(
+            pre_ablation_classifier,
+            pre_ablation_probabilities,
+        )
+        rows = [
+            {
+                "title": book.title,
+                "author": book.author,
+                "pre_ablation_predicted_author": pre_labels[row_index],
+                "decision_changed": False,
+                "change_at_deleted_order": None,
+                "change_feature_index": None,
+                "change_feature_name": None,
+                "post_change_predicted_author": pre_labels[row_index],
+            }
+            for row_index, book in enumerate(test_corpus)
+        ]
+
+        deleted_features = list(ablation_artifacts.deleted_features)
+        deleted_feature_names = list(ablation_artifacts.deleted_feature_names)
+        if not deleted_features:
+            return pd.DataFrame(rows)
+
+        X_train_current = verifier_artifacts.X_train.copy()
+        X_test_current = verifier_artifacts.X_test.copy()
+
+        for deleted_order, feature_index in enumerate(deleted_features, start=1):
+            X_train_current = zero_columns(X_train_current, [feature_index])
+            X_test_current = zero_columns(X_test_current, [feature_index])
+            classifier, probabilities = self._predict_test_probabilities(
+                verifier,
+                verifier_artifacts,
+                X_train_current,
+                X_test_current,
+            )
+            labels = self._predict_test_labels(classifier, probabilities)
+            feature_name = deleted_feature_names[deleted_order - 1]
+
+            for row_index, label in enumerate(labels):
+                row = rows[row_index]
+                if row["decision_changed"]:
+                    continue
+                if label != row["pre_ablation_predicted_author"]:
+                    row["decision_changed"] = True
+                    row["change_at_deleted_order"] = deleted_order
+                    row["change_feature_index"] = feature_index
+                    row["change_feature_name"] = feature_name
+                    row["post_change_predicted_author"] = label
+
+        return pd.DataFrame(rows)
+
     def run(self):
         from authorship_verification import AuthorshipVerification
 
@@ -230,8 +300,20 @@ class QuixoteInferenceExperiment:
         from results import (
             ExperimentTables,
             build_ablation_table,
+            build_decision_change_table,
             build_prediction_table,
             build_score_table,
+        )
+
+        decision_change_table = build_decision_change_table(
+            self._track_decision_changes(
+                verifier=verifier,
+                verifier_artifacts=verifier_artifacts,
+                test_corpus=corpora.test_corpus,
+                pre_ablation_classifier=pre_ablation_classifier,
+                pre_ablation_probabilities=pre_ablation_probabilities,
+                ablation_artifacts=ablation_artifacts,
+            ).to_dict(orient="records")
         )
 
         tables = ExperimentTables(
@@ -249,11 +331,13 @@ class QuixoteInferenceExperiment:
                 positive_author=self.config.positive_author,
             ),
             ablation_table=build_ablation_table(ablation_artifacts) if ablation_artifacts is not None else pd.DataFrame(),
+            decision_change_table=decision_change_table,
         )
         self._display_tables(
             score_table=tables.score_table,
             prediction_table=tables.prediction_table,
             ablation_table=tables.ablation_table,
+            decision_change_table=tables.decision_change_table,
         )
         saved_results = self.result_writer.save_tables(tables)
 

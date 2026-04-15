@@ -9,6 +9,7 @@ class ExperimentTables:
     score_table: pd.DataFrame
     prediction_table: pd.DataFrame
     ablation_table: pd.DataFrame
+    decision_change_table: pd.DataFrame
 
 
 @dataclass
@@ -16,9 +17,11 @@ class SavedResults:
     score_csv_path: Path
     predictions_csv_path: Path
     ablation_csv_path: Path
+    decision_changes_csv_path: Path
     score_json_path: Path
     predictions_json_path: Path
     ablation_json_path: Path
+    decision_changes_json_path: Path
 
 
 def build_score_table(pre_ablation_evaluation, post_ablation_evaluation, model_selection_score):
@@ -131,6 +134,10 @@ def build_ablation_table(ablation_artifacts):
     return pd.DataFrame(rows)
 
 
+def build_decision_change_table(decision_change_rows):
+    return pd.DataFrame(decision_change_rows)
+
+
 class ResultWriter:
     def __init__(self, results_path: str):
         self.predictions_json_path = Path(results_path)
@@ -139,21 +146,27 @@ class ResultWriter:
         self.score_csv_path = self.predictions_json_path.parent / "score.csv"
         self.ablation_json_path = self.predictions_json_path.parent / "ablation.json"
         self.ablation_csv_path = self.predictions_json_path.parent / "ablation.csv"
+        self.decision_changes_json_path = self.predictions_json_path.parent / "decision_changes.json"
+        self.decision_changes_csv_path = self.predictions_json_path.parent / "decision_changes.csv"
 
     def save_tables(self, tables: ExperimentTables):
         tables.score_table.to_csv(self.score_csv_path, index=False)
         tables.prediction_table.to_csv(self.predictions_csv_path, index=False)
         tables.ablation_table.to_csv(self.ablation_csv_path, index=False)
+        tables.decision_change_table.to_csv(self.decision_changes_csv_path, index=False)
 
         tables.score_table.to_json(self.score_json_path, orient="records", indent=4)
         tables.prediction_table.to_json(self.predictions_json_path, orient="records", indent=4)
         tables.ablation_table.to_json(self.ablation_json_path, orient="records", indent=4)
+        tables.decision_change_table.to_json(self.decision_changes_json_path, orient="records", indent=4)
 
         return SavedResults(
             score_csv_path=self.score_csv_path,
             predictions_csv_path=self.predictions_csv_path,
             ablation_csv_path=self.ablation_csv_path,
+            decision_changes_csv_path=self.decision_changes_csv_path,
             score_json_path=self.score_json_path,
             predictions_json_path=self.predictions_json_path,
             ablation_json_path=self.ablation_json_path,
+            decision_changes_json_path=self.decision_changes_json_path,
         )
