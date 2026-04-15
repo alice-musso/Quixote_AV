@@ -116,7 +116,7 @@ class QuixoteInferenceExperiment:
     def _compute_ablation(self, verifier, verifier_artifacts, train_corpus):
         from quijote_classifier.quijote_experiment import QuijoteAblationExperiment
         from quijote_classifier.supervised_term_weighting.tsr_functions import (
-            posneg_information_gain,
+            posneg_information_gain, pointwise_mutual_information
         )
 
         ablation_experiment = QuijoteAblationExperiment(
@@ -133,7 +133,7 @@ class QuixoteInferenceExperiment:
             X=positive_author_train_matrix,
             y=y_quijote,
             random_state=self.config.random_state,
-            tsr_metric=posneg_information_gain,
+            tsr_metric=pointwise_mutual_information,
         )
 
         classifier = verifier.new_classifier().set_params(

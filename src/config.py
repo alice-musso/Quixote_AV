@@ -38,13 +38,13 @@ class ModelConfig:
         parser.add_argument(
             "--load-hyperparams",
             action=argparse.BooleanOptionalAction,
-            default=False,
+            default=True,
             help="Load saved hyperparameters; use --no-load-hyperparams to rerun model selection.",
         )
         parser.add_argument(
             "--skip-ablation",
             action=argparse.BooleanOptionalAction,
-            default=True,
+            default=False,
             help="Skip the topic-ablation step; use --no-skip-ablation to re-enable it.",
         )
         args = parser.parse_args()
