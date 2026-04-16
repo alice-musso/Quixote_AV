@@ -32,6 +32,7 @@ class Book:
         self.path = path
         self.title = title.strip()
         self.author = author_normalized
+        self.original_author = author_normalized
         self.raw_text = raw_text
         self.clean_text = clean_text
         self.processed = None
@@ -140,7 +141,6 @@ def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
         if book.author != positive_author:
             book.author = 'Not' + positive_author
     return corpus
-
 
 
 

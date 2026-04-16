@@ -14,6 +14,7 @@ class ModelConfig:
     classifier_type: str
     load_hyperparams: bool
     skip_ablation: bool = False
+    skip_decision_changes: bool = False
     n_jobs: int = -1
     random_state: int = 0
     max_features: int = 5000
@@ -47,6 +48,12 @@ class ModelConfig:
             default=True,
             help="Skip the topic-ablation step; use --no-skip-ablation to re-enable it.",
         )
+        parser.add_argument(
+            "--skip-decision-changes",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Skip decision-change tracing for a faster run.",
+        )
         args = parser.parse_args()
         return cls.from_namespace(args)
 
@@ -73,6 +80,7 @@ class ModelConfig:
             classifier_type=classifier_type,
             load_hyperparams=args.load_hyperparams,
             skip_ablation=args.skip_ablation,
+            skip_decision_changes=args.skip_decision_changes,
         )
         config.ensure_output_dirs()
         return config

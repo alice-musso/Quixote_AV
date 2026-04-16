@@ -98,7 +98,9 @@ class QuijoteAblationExperiment:
                 f"F1={f1 * 100:.2f}% num-feats={features_remaining}"
             )
 
-            if acc <= 0.55:
+            threshold_random_accuracy = threshold_random_accuracy(len(y), alpha=0.05, p0=0.5)
+            print(f"threshold random accuracy: {threshold_random_accuracy * 100:.2f}%")
+            if acc <= threshold_random_accuracy:
                 degenerated = True
                 print("stop: classifier has degenerated")
             elif delete_pointer < len(feature_ranking):
