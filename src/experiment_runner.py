@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from pathlib import Path
 import pandas as pd
 from scipy import sparse
-from scipy.stats import binom
 
 
 @dataclass
@@ -134,7 +133,7 @@ class QuixoteInferenceExperiment:
             X=positive_author_train_matrix,
             y=y_quijote,
             random_state=self.config.random_state,
-            tsr_metric=pointwise_mutual_information,
+            tsr_metric=posneg_information_gain,
         )
 
         classifier = verifier.new_classifier().set_params(
@@ -362,7 +361,3 @@ class QuixoteInferenceExperiment:
             ablation_table=tables.ablation_table,
         )
 
-def threshold_accuracy(n, alpha=0.05, p0=0.5):
-    # k* = smallest k such that P(K >= k) <= alpha
-    k_star = binom.isf(alpha, n, p0)  # inverse survival function
-    return int(k_star), k_star / n

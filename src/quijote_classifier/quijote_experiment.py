@@ -12,6 +12,7 @@ from quijote_classifier.supervised_term_weighting.tsr_functions import (
     get_supervised_matrix,
     get_tsr_matrix,
 )
+from scipy.stats import binom
 
 warnings.filterwarnings("ignore")
 
@@ -98,7 +99,20 @@ class QuijoteAblationExperiment:
                 f"F1={f1 * 100:.2f}% num-feats={features_remaining}"
             )
 
-            if acc <= 0.55:
+            acc = np.mean(y_pred[y==1])  # aka recall
+            print(
+                f"Books+Segments: Recall={acc * 100:.2f}% "
+            )
+
+            def threshold_accuracy(n, alpha=0.01, p0=0.5):
+                # k* = smallest k such that P(K >= k) <= alpha
+                k_star = binom.isf(alpha, n, p0)  # inverse survival function
+                return int(k_star), k_star / n
+
+            #_, acc_threshold = threshold_accuracy(n=len(y))
+            _, acc_threshold = threshold_accuracy(n=sum(y))
+            print(f"{acc_threshold=} (recall)")
+            if acc <= acc_threshold:
                 degenerated = True
                 print("stop: classifier has degenerated")
             elif delete_pointer < len(feature_ranking):
