@@ -314,23 +314,27 @@ class QuixoteInferenceExperiment:
         if ablation_artifacts is None:
             return pd.DataFrame()
 
+        tracked_author = self.config.positive_author
+        if tracked_author not in pre_ablation_predictions.authors:
+            print(f'\nDecision change tracing skipped: classifier "{tracked_author}" is not available.')
+            return pd.DataFrame()
+
         rows = []
         for row_index, book in enumerate(test_corpus):
-            for classifier_author in pre_ablation_predictions.authors:
-                pre_prediction = int(pre_ablation_predictions.predicted_table.iloc[row_index][classifier_author])
-                rows.append(
-                    {
-                        "title": book.title,
-                        "author": book.original_author,
-                        "classifier_author": classifier_author,
-                        "pre_ablation_prediction": pre_prediction,
-                        "decision_changed": False,
-                        "change_at_deleted_order": None,
-                        "change_feature_index": None,
-                        "change_feature_name": None,
-                        "post_change_prediction": pre_prediction,
-                    }
-                )
+            pre_prediction = int(pre_ablation_predictions.predicted_table.iloc[row_index][tracked_author])
+            rows.append(
+                {
+                    "title": book.title,
+                    "author": book.original_author,
+                    "classifier_author": tracked_author,
+                    "pre_ablation_prediction": pre_prediction,
+                    "decision_changed": False,
+                    "change_at_deleted_order": None,
+                    "change_feature_index": None,
+                    "change_feature_name": None,
+                    "post_change_prediction": pre_prediction,
+                }
+            )
 
         deleted_features = list(ablation_artifacts.deleted_features)
         deleted_feature_names = list(ablation_artifacts.deleted_feature_names)
@@ -345,7 +349,7 @@ class QuixoteInferenceExperiment:
             if remaining_changes == 0:
                 print(
                     f"Decision tracing stopped early after {deleted_order - 1} deletions: "
-                    "all test books changed decision."
+                    f'all test books changed decision for "{tracked_author}".'
                 )
                 break
             X_train_current = zero_columns(X_train_current, [feature_index])
@@ -356,25 +360,22 @@ class QuixoteInferenceExperiment:
                 X_train_current,
                 X_test_current,
                 train_author_labels=train_author_labels,
-                authors=pre_ablation_predictions.authors,
+                authors=[tracked_author],
             )
             feature_name = deleted_feature_names[deleted_order - 1]
 
-            row_index = 0
             for test_index, _book in enumerate(test_corpus):
-                for classifier_author in predictions.authors:
-                    row = rows[row_index]
-                    row_index += 1
-                    if row["decision_changed"]:
-                        continue
-                    label = int(predictions.predicted_table.iloc[test_index][classifier_author])
-                    if label != row["pre_ablation_prediction"]:
-                        row["decision_changed"] = True
-                        row["change_at_deleted_order"] = deleted_order
-                        row["change_feature_index"] = feature_index
-                        row["change_feature_name"] = feature_name
-                        row["post_change_prediction"] = label
-                        remaining_changes -= 1
+                row = rows[test_index]
+                if row["decision_changed"]:
+                    continue
+                label = int(predictions.predicted_table.iloc[test_index][tracked_author])
+                if label != row["pre_ablation_prediction"]:
+                    row["decision_changed"] = True
+                    row["change_at_deleted_order"] = deleted_order
+                    row["change_feature_index"] = feature_index
+                    row["change_feature_name"] = feature_name
+                    row["post_change_prediction"] = label
+                    remaining_changes -= 1
 
         return pd.DataFrame(rows)
 
