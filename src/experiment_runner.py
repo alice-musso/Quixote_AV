@@ -21,9 +21,11 @@ class ExperimentOutputs:
     score_path: Path
     results_path: Path
     ablation_path: Path
+    decision_changes_path: Path
     score_table: object
     prediction_table: object
     ablation_table: object
+    decision_change_table: object
 
 
 @dataclass
@@ -31,6 +33,7 @@ class AuthorPredictionArtifacts:
     score_table: pd.DataFrame
     predicted_table: pd.DataFrame
     authors: list[str]
+    scored_authors: list[str]
 
 
 def zero_columns(X, column_indices):
@@ -178,21 +181,6 @@ class QuixoteInferenceExperiment:
         self._print_evaluation("Post-ablation", evaluation)
         return evaluation
 
-    def _predict_test_probabilities(self, verifier, verifier_artifacts, X_train, X_test):
-        from sklearn.calibration import CalibratedClassifierCV
-
-        calibrated_classifier = CalibratedClassifierCV(
-            verifier.new_classifier().set_params(
-                C=verifier_artifacts.hyperparams["C"],
-                class_weight=verifier_artifacts.hyperparams["class_weight"],
-            ),
-            cv=10,
-            method="sigmoid",
-            n_jobs=-1,
-        ).fit(X_train, verifier_artifacts.y)
-        probabilities = calibrated_classifier.predict_proba(X_test)
-        return calibrated_classifier, probabilities
-
     def _expanded_original_author_labels(self, books):
         labels = []
         groups = []
@@ -216,6 +204,9 @@ class QuixoteInferenceExperiment:
             author_counts[book.original_author] = author_counts.get(book.original_author, 0) + 1
         return sorted(author for author, count in author_counts.items() if count > 1)
 
+    def _predictable_authors(self, books):
+        return sorted({book.original_author for book in books})
+
     def _positive_class_scores(self, estimator, X):
         if hasattr(estimator, "predict_proba"):
             probabilities = estimator.predict_proba(X)
@@ -234,7 +225,9 @@ class QuixoteInferenceExperiment:
         X_test,
         train_author_labels,
         authors,
+        score_authors=None,
     ):
+        score_authors = set(authors if score_authors is None else score_authors)
         score_columns = {}
         predicted_columns = {}
         for author in authors:
@@ -243,17 +236,19 @@ class QuixoteInferenceExperiment:
                 continue
             estimator = self._new_author_estimator(verifier, verifier_artifacts)
             estimator.fit(X_train, y_train)
-            score_columns[author] = self._positive_class_scores(estimator, X_test)
             predicted_columns[author] = estimator.predict(X_test)
+            if author in score_authors:
+                score_columns[author] = self._positive_class_scores(estimator, X_test)
 
-        score_table = pd.DataFrame(score_columns)
         predicted_table = pd.DataFrame(predicted_columns)
-        if score_table.empty or predicted_table.empty:
+        score_table = pd.DataFrame(score_columns)
+        if predicted_table.empty:
             raise ValueError("No one-vs-rest author classifier could be trained.")
         return AuthorPredictionArtifacts(
             score_table=score_table,
             predicted_table=predicted_table,
-            authors=list(score_table.columns),
+            authors=list(predicted_table.columns),
+            scored_authors=list(score_table.columns),
         )
 
     def _evaluate_each_author(self, verifier, verifier_artifacts, X, author_labels, groups, phase, authors):
@@ -390,6 +385,7 @@ class QuixoteInferenceExperiment:
         verifier = AuthorshipVerification(self.config)
         verifier_artifacts = self._prepare_verifier(verifier, corpora)
         train_author_labels, train_author_groups = self._expanded_original_author_labels(corpora.train_corpus)
+        predictable_authors = self._predictable_authors(corpora.train_corpus)
         eligible_authors = self._eligible_authors(corpora.train_corpus)
 
         pre_ablation_evaluation = self._evaluate_pre_ablation(
@@ -425,7 +421,8 @@ class QuixoteInferenceExperiment:
             verifier_artifacts.X_train,
             verifier_artifacts.X_test,
             train_author_labels=train_author_labels,
-            authors=eligible_authors,
+            authors=predictable_authors,
+            score_authors=eligible_authors,
         )
 
         post_ablation_author_scores = self._predict_each_author(
@@ -434,7 +431,8 @@ class QuixoteInferenceExperiment:
             X_train_ablated,
             X_test_ablated,
             train_author_labels=train_author_labels,
-            authors=eligible_authors,
+            authors=predictable_authors,
+            score_authors=eligible_authors,
         )
 
         author_score_table = pd.concat(
@@ -511,8 +509,9 @@ class QuixoteInferenceExperiment:
             score_path=saved_results.score_csv_path,
             results_path=saved_results.predictions_csv_path,
             ablation_path=saved_results.ablation_csv_path,
+            decision_changes_path=saved_results.decision_changes_csv_path,
             score_table=tables.score_table,
             prediction_table=tables.prediction_table,
             ablation_table=tables.ablation_table,
+            decision_change_table=tables.decision_change_table,
         )
-

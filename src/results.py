@@ -36,7 +36,8 @@ def _prediction_columns(predictions, prefix):
         row = {}
         for author in predictions.authors:
             row[f"{prefix}_pred_{author}"] = int(predictions.predicted_table.iloc[row_index][author])
-            row[f"{prefix}_score_{author}"] = predictions.score_table.iloc[row_index][author]
+            if author in predictions.scored_authors:
+                row[f"{prefix}_score_{author}"] = predictions.score_table.iloc[row_index][author]
         columns.append(row)
     return columns
 

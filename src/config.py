@@ -14,7 +14,7 @@ class ModelConfig:
     classifier_type: str
     load_hyperparams: bool
     skip_ablation: bool = False
-    skip_decision_changes: bool = False
+    skip_decision_changes: bool = True
     n_jobs: int = -1
     random_state: int = 0
     max_features: int = 5000

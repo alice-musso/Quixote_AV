@@ -54,3 +54,16 @@ python -m inference \
 ```
 
 Use `--no-load-hyperparams` to rerun model selection instead of loading a saved hyperparameter file.
+
+Use `--skip-ablation` to bypass topic-feature removal, and `--no-skip-decision-changes` to enable the slower decision-flip tracing pass.
+
+## Output Tables
+
+Inference writes JSON and CSV tables under the configured results directory.
+
+- `score`: one row per `phase` (`pre_ablation`, `post_ablation`), per `author`, and per `scope` (`books`, `segments`), with `accuracy`, `f1`, fold counts, and `model_selection_score`.
+- `predictions`: one row per test book, with `title`, `author`, and one-vs-rest columns like `pre_ablation_pred_<author>` and `pre_ablation_score_<author>` plus the matching `post_ablation_*` columns.
+- `ablation`: one row per deleted feature, including deletion order, original rank, feature index, and feature name.
+- `decision_changes`: one row per test-book and classifier-author pair, recording whether the one-vs-rest prediction changed during sequential feature deletion and, if so, when it first flipped.
+
+Older sample outputs with the previous multiclass-style schema are kept in `src/results/legacy/` for reference.
