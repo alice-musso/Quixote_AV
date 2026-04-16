@@ -2,7 +2,12 @@ import pickle
 from dataclasses import dataclass
 from pathlib import Path
 import pandas as pd
+import numpy as np
 from scipy import sparse
+from sklearn.base import clone
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import LeaveOneGroupOut
+from authorship_verification import get_full_books, get_segments
 
 
 @dataclass
@@ -19,6 +24,13 @@ class ExperimentOutputs:
     score_table: object
     prediction_table: object
     ablation_table: object
+
+
+@dataclass
+class AuthorPredictionArtifacts:
+    score_table: pd.DataFrame
+    predicted_table: pd.DataFrame
+    authors: list[str]
 
 
 def zero_columns(X, column_indices):
@@ -75,11 +87,6 @@ class QuixoteInferenceExperiment:
         print(ablation_table.to_string(index=False))
         print("\nDecision change table:")
         print(decision_change_table.to_string(index=False))
-
-    def _predict_test_labels(self, classifier, probabilities):
-        class_labels = list(classifier.classes_)
-        predicted_indices = probabilities.argmax(axis=1)
-        return [class_labels[index] for index in predicted_indices]
 
     def _load_corpora(self):
         from data_preparation.data_loader import binarize_corpus, load_corpus
@@ -186,35 +193,149 @@ class QuixoteInferenceExperiment:
         probabilities = calibrated_classifier.predict_proba(X_test)
         return calibrated_classifier, probabilities
 
+    def _expanded_original_author_labels(self, books):
+        labels = []
+        groups = []
+        for group_id, book in enumerate(books):
+            labels.append(book.original_author)
+            groups.append(group_id)
+            for _ in book.segmented:
+                labels.append(book.original_author)
+                groups.append(group_id)
+        return np.asarray(labels, dtype=object), groups
+
+    def _new_author_estimator(self, verifier, verifier_artifacts):
+        return verifier.new_classifier().set_params(
+            C=verifier_artifacts.hyperparams["C"],
+            class_weight=verifier_artifacts.hyperparams["class_weight"],
+        )
+
+    def _eligible_authors(self, books):
+        author_counts = {}
+        for book in books:
+            author_counts[book.original_author] = author_counts.get(book.original_author, 0) + 1
+        return sorted(author for author, count in author_counts.items() if count > 1)
+
+    def _positive_class_scores(self, estimator, X):
+        if hasattr(estimator, "predict_proba"):
+            probabilities = estimator.predict_proba(X)
+            classes = list(estimator.classes_)
+            positive_index = classes.index(1)
+            return np.asarray(probabilities[:, positive_index], dtype=float)
+        if hasattr(estimator, "decision_function"):
+            return np.asarray(estimator.decision_function(X), dtype=float).reshape(-1)
+        return np.asarray(estimator.predict(X), dtype=float)
+
+    def _predict_each_author(
+        self,
+        verifier,
+        verifier_artifacts,
+        X_train,
+        X_test,
+        train_author_labels,
+        authors,
+    ):
+        score_columns = {}
+        predicted_columns = {}
+        for author in authors:
+            y_train = (np.asarray(train_author_labels) == author).astype(int)
+            if np.unique(y_train).size < 2:
+                continue
+            estimator = self._new_author_estimator(verifier, verifier_artifacts)
+            estimator.fit(X_train, y_train)
+            score_columns[author] = self._positive_class_scores(estimator, X_test)
+            predicted_columns[author] = estimator.predict(X_test)
+
+        score_table = pd.DataFrame(score_columns)
+        predicted_table = pd.DataFrame(predicted_columns)
+        if score_table.empty or predicted_table.empty:
+            raise ValueError("No one-vs-rest author classifier could be trained.")
+        return AuthorPredictionArtifacts(
+            score_table=score_table,
+            predicted_table=predicted_table,
+            authors=list(score_table.columns),
+        )
+
+    def _evaluate_each_author(self, verifier, verifier_artifacts, X, author_labels, groups, phase, authors):
+        author_labels = np.asarray(author_labels, dtype=object)
+        groups = np.asarray(groups)
+        logo = LeaveOneGroupOut()
+        rows = []
+
+        for author in authors:
+            y = (author_labels == author).astype(int)
+            predictions = np.zeros_like(y)
+            trainable_folds = 0
+            untrainable_folds = 0
+
+            for train_idx, test_idx in logo.split(X, y, groups):
+                y_train = y[train_idx]
+                if np.unique(y_train).size < 2:
+                    predictions[test_idx] = 0
+                    untrainable_folds += 1
+                    continue
+
+                estimator = clone(self._new_author_estimator(verifier, verifier_artifacts))
+                estimator.fit(X[train_idx], y_train)
+                predictions[test_idx] = estimator.predict(X[test_idx])
+                trainable_folds += 1
+
+            y_books, predictions_books = get_full_books(y, predictions, groups)
+            y_segments, predictions_segments = get_segments(y, predictions, groups)
+            rows.append(
+                {
+                    "phase": phase,
+                    "author": author,
+                    "scope": "books",
+                    "accuracy": float(accuracy_score(y_books, predictions_books)),
+                    "f1": float(f1_score(y_books, predictions_books, pos_label=1, zero_division=1.0)),
+                    "trainable_folds": trainable_folds,
+                    "untrainable_folds": untrainable_folds,
+                }
+            )
+            rows.append(
+                {
+                    "phase": phase,
+                    "author": author,
+                    "scope": "segments",
+                    "accuracy": float(accuracy_score(y_segments, predictions_segments)),
+                    "f1": float(f1_score(y_segments, predictions_segments, pos_label=1, zero_division=1.0)),
+                    "trainable_folds": trainable_folds,
+                    "untrainable_folds": untrainable_folds,
+                }
+            )
+
+        return pd.DataFrame(rows)
+
     def _track_decision_changes(
         self,
         verifier,
         verifier_artifacts,
         test_corpus,
-        pre_ablation_classifier,
-        pre_ablation_probabilities,
+        pre_ablation_predictions,
+        train_author_labels,
         ablation_artifacts,
     ):
         if ablation_artifacts is None:
             return pd.DataFrame()
 
-        pre_labels = self._predict_test_labels(
-            pre_ablation_classifier,
-            pre_ablation_probabilities,
-        )
-        rows = [
-            {
-                "title": book.title,
-                "author": book.author,
-                "pre_ablation_predicted_author": pre_labels[row_index],
-                "decision_changed": False,
-                "change_at_deleted_order": None,
-                "change_feature_index": None,
-                "change_feature_name": None,
-                "post_change_predicted_author": pre_labels[row_index],
-            }
-            for row_index, book in enumerate(test_corpus)
-        ]
+        rows = []
+        for row_index, book in enumerate(test_corpus):
+            for classifier_author in pre_ablation_predictions.authors:
+                pre_prediction = int(pre_ablation_predictions.predicted_table.iloc[row_index][classifier_author])
+                rows.append(
+                    {
+                        "title": book.title,
+                        "author": book.original_author,
+                        "classifier_author": classifier_author,
+                        "pre_ablation_prediction": pre_prediction,
+                        "decision_changed": False,
+                        "change_at_deleted_order": None,
+                        "change_feature_index": None,
+                        "change_feature_name": None,
+                        "post_change_prediction": pre_prediction,
+                    }
+                )
 
         deleted_features = list(ablation_artifacts.deleted_features)
         deleted_feature_names = list(ablation_artifacts.deleted_feature_names)
@@ -234,26 +355,31 @@ class QuixoteInferenceExperiment:
                 break
             X_train_current = zero_columns(X_train_current, [feature_index])
             X_test_current = zero_columns(X_test_current, [feature_index])
-            classifier, probabilities = self._predict_test_probabilities(
+            predictions = self._predict_each_author(
                 verifier,
                 verifier_artifacts,
                 X_train_current,
                 X_test_current,
+                train_author_labels=train_author_labels,
+                authors=pre_ablation_predictions.authors,
             )
-            labels = self._predict_test_labels(classifier, probabilities)
             feature_name = deleted_feature_names[deleted_order - 1]
 
-            for row_index, label in enumerate(labels):
-                row = rows[row_index]
-                if row["decision_changed"]:
-                    continue
-                if label != row["pre_ablation_predicted_author"]:
-                    row["decision_changed"] = True
-                    row["change_at_deleted_order"] = deleted_order
-                    row["change_feature_index"] = feature_index
-                    row["change_feature_name"] = feature_name
-                    row["post_change_predicted_author"] = label
-                    remaining_changes -= 1
+            row_index = 0
+            for test_index, _book in enumerate(test_corpus):
+                for classifier_author in predictions.authors:
+                    row = rows[row_index]
+                    row_index += 1
+                    if row["decision_changed"]:
+                        continue
+                    label = int(predictions.predicted_table.iloc[test_index][classifier_author])
+                    if label != row["pre_ablation_prediction"]:
+                        row["decision_changed"] = True
+                        row["change_at_deleted_order"] = deleted_order
+                        row["change_feature_index"] = feature_index
+                        row["change_feature_name"] = feature_name
+                        row["post_change_prediction"] = label
+                        remaining_changes -= 1
 
         return pd.DataFrame(rows)
 
@@ -263,6 +389,8 @@ class QuixoteInferenceExperiment:
         corpora = self._load_corpora()
         verifier = AuthorshipVerification(self.config)
         verifier_artifacts = self._prepare_verifier(verifier, corpora)
+        train_author_labels, train_author_groups = self._expanded_original_author_labels(corpora.train_corpus)
+        eligible_authors = self._eligible_authors(corpora.train_corpus)
 
         pre_ablation_evaluation = self._evaluate_pre_ablation(
             verifier,
@@ -291,18 +419,46 @@ class QuixoteInferenceExperiment:
                 X_train_ablated,
             )
 
-        pre_ablation_classifier, pre_ablation_probabilities = self._predict_test_probabilities(
+        pre_ablation_author_scores = self._predict_each_author(
             verifier,
             verifier_artifacts,
             verifier_artifacts.X_train,
             verifier_artifacts.X_test,
+            train_author_labels=train_author_labels,
+            authors=eligible_authors,
         )
 
-        post_ablation_classifier, post_ablation_probabilities = self._predict_test_probabilities(
+        post_ablation_author_scores = self._predict_each_author(
             verifier,
             verifier_artifacts,
             X_train_ablated,
             X_test_ablated,
+            train_author_labels=train_author_labels,
+            authors=eligible_authors,
+        )
+
+        author_score_table = pd.concat(
+            [
+                self._evaluate_each_author(
+                    verifier,
+                    verifier_artifacts,
+                    verifier_artifacts.X_train,
+                    train_author_labels,
+                    train_author_groups,
+                    phase="pre_ablation",
+                    authors=eligible_authors,
+                ),
+                self._evaluate_each_author(
+                    verifier,
+                    verifier_artifacts,
+                    X_train_ablated,
+                    train_author_labels,
+                    train_author_groups,
+                    phase="post_ablation",
+                    authors=eligible_authors,
+                ),
+            ],
+            ignore_index=True,
         )
 
         from results import (
@@ -315,17 +471,13 @@ class QuixoteInferenceExperiment:
 
         tables = ExperimentTables(
             score_table=build_score_table(
-                pre_ablation_evaluation=pre_ablation_evaluation,
-                post_ablation_evaluation=post_ablation_evaluation,
+                author_score_table=author_score_table,
                 model_selection_score=verifier_artifacts.model_selection_score,
             ),
             prediction_table=build_prediction_table(
-                pre_classifier=pre_ablation_classifier,
-                pre_probabilities=pre_ablation_probabilities,
-                post_classifier=post_ablation_classifier,
-                post_probabilities=post_ablation_probabilities,
+                pre_predictions=pre_ablation_author_scores,
+                post_predictions=post_ablation_author_scores,
                 test_corpus=corpora.test_corpus,
-                positive_author=self.config.positive_author,
             ),
             ablation_table=build_ablation_table(ablation_artifacts) if ablation_artifacts is not None else pd.DataFrame(),
             decision_change_table=pd.DataFrame(),
@@ -337,19 +489,22 @@ class QuixoteInferenceExperiment:
             decision_change_table=tables.decision_change_table,
         )
 
-        print("\nTracing decision changes...")
-        tables.decision_change_table = build_decision_change_table(
-            self._track_decision_changes(
-                verifier=verifier,
-                verifier_artifacts=verifier_artifacts,
-                test_corpus=corpora.test_corpus,
-                pre_ablation_classifier=pre_ablation_classifier,
-                pre_ablation_probabilities=pre_ablation_probabilities,
-                ablation_artifacts=ablation_artifacts,
-            ).to_dict(orient="records")
-        )
-        print("\nDecision change table:")
-        print(tables.decision_change_table.to_string(index=False))
+        if self.config.skip_decision_changes:
+            print("\nDecision change tracing skipped.")
+        else:
+            print("\nTracing decision changes...")
+            tables.decision_change_table = build_decision_change_table(
+                self._track_decision_changes(
+                    verifier=verifier,
+                    verifier_artifacts=verifier_artifacts,
+                    test_corpus=corpora.test_corpus,
+                    pre_ablation_predictions=pre_ablation_author_scores,
+                    train_author_labels=train_author_labels,
+                    ablation_artifacts=ablation_artifacts,
+                ).to_dict(orient="records")
+            )
+            print("\nDecision change table:")
+            print(tables.decision_change_table.to_string(index=False))
         saved_results = self.result_writer.save_tables(tables)
 
         return ExperimentOutputs(

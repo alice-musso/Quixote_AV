@@ -24,81 +24,34 @@ class SavedResults:
     decision_changes_json_path: Path
 
 
-def build_score_table(pre_ablation_evaluation, post_ablation_evaluation, model_selection_score):
-    rows = [
-        {
-            "phase": "pre_ablation",
-            "scope": "books",
-            "accuracy": pre_ablation_evaluation.books.accuracy,
-            "f1": pre_ablation_evaluation.books.f1,
-            "model_selection_score": model_selection_score,
-        },
-        {
-            "phase": "pre_ablation",
-            "scope": "segments",
-            "accuracy": pre_ablation_evaluation.segments.accuracy,
-            "f1": pre_ablation_evaluation.segments.f1,
-            "model_selection_score": model_selection_score,
-        },
-        {
-            "phase": "post_ablation",
-            "scope": "books",
-            "accuracy": post_ablation_evaluation.books.accuracy,
-            "f1": post_ablation_evaluation.books.f1,
-            "model_selection_score": model_selection_score,
-        },
-        {
-            "phase": "post_ablation",
-            "scope": "segments",
-            "accuracy": post_ablation_evaluation.segments.accuracy,
-            "f1": post_ablation_evaluation.segments.f1,
-            "model_selection_score": model_selection_score,
-        },
-    ]
-    return pd.DataFrame(rows)
+def build_score_table(author_score_table, model_selection_score):
+    score_table = author_score_table.copy()
+    score_table["model_selection_score"] = model_selection_score
+    return score_table
 
 
-def _prediction_columns(classifier, probabilities, positive_author, prefix):
-    class_labels = list(classifier.classes_)
-    probability_by_label = {
-        label: probabilities[:, class_index]
-        for class_index, label in enumerate(class_labels)
-    }
-    positive_probabilities = probability_by_label.get(positive_author)
-    if positive_probabilities is None:
-        raise ValueError(f"{positive_author} not found in classifier classes {class_labels}")
-
-    predicted_labels = [class_labels[row.argmax()] for row in probabilities]
+def _prediction_columns(predictions, prefix):
     columns = []
-    for row_index in range(len(probabilities)):
-        row = {
-            f"{prefix}_predicted_author": predicted_labels[row_index],
-            f"{prefix}_positive_author_probability": positive_probabilities[row_index],
-        }
-        for label in class_labels:
-            row[f"{prefix}_prob_{label}"] = probability_by_label[label][row_index]
+    for row_index in range(len(predictions.predicted_table)):
+        row = {}
+        for author in predictions.authors:
+            row[f"{prefix}_pred_{author}"] = int(predictions.predicted_table.iloc[row_index][author])
+            row[f"{prefix}_score_{author}"] = predictions.score_table.iloc[row_index][author]
         columns.append(row)
     return columns
 
 
 def build_prediction_table(
-    pre_classifier,
-    pre_probabilities,
-    post_classifier,
-    post_probabilities,
+    pre_predictions,
+    post_predictions,
     test_corpus,
-    positive_author,
 ):
     pre_rows = _prediction_columns(
-        classifier=pre_classifier,
-        probabilities=pre_probabilities,
-        positive_author=positive_author,
+        predictions=pre_predictions,
         prefix="pre_ablation",
     )
     post_rows = _prediction_columns(
-        classifier=post_classifier,
-        probabilities=post_probabilities,
-        positive_author=positive_author,
+        predictions=post_predictions,
         prefix="post_ablation",
     )
 
@@ -106,7 +59,7 @@ def build_prediction_table(
     for row_index, book in enumerate(test_corpus):
         row = {
             "title": book.title,
-            "author": book.author,
+            "author": book.original_author,
         }
         row.update(pre_rows[row_index])
         row.update(post_rows[row_index])
