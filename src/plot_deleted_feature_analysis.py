@@ -64,21 +64,34 @@ def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
         return None
 
     labels = metadata["feature_name"].astype(str).tolist()
-    display_labels = labels if len(labels) <= max_labels else None
+    linkage_matrix = linkage_table[["left", "right", "distance", "count"]].to_numpy(dtype=float)
+    use_truncated_view = len(labels) > max_labels
 
     fig, ax = plt.subplots(figsize=figure_size_for_features(len(labels)))
-    dendrogram_fn(
-        linkage_table[["left", "right", "distance", "count"]].to_numpy(),
-        labels=display_labels,
-        leaf_rotation=90,
-        leaf_font_size=7,
-        ax=ax,
-        color_threshold=None,
-    )
+    dendrogram_kwargs = {
+        "leaf_rotation": 90,
+        "leaf_font_size": 7,
+        "ax": ax,
+        "color_threshold": None,
+    }
+    if use_truncated_view:
+        dendrogram_kwargs.update(
+            {
+                "truncate_mode": "lastp",
+                "p": max_labels,
+                "show_leaf_counts": True,
+            }
+        )
+    else:
+        dendrogram_kwargs["labels"] = labels
+    dendrogram_fn(linkage_matrix, **dendrogram_kwargs)
     ax.set_title(f"Hierarchical Clustering: {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
     ax.set_ylabel("Distance")
-    if display_labels is None:
-        ax.set_xlabel(f"Leaf order only ({len(labels)} features; labels suppressed)")
+    if use_truncated_view:
+        ax.set_xlabel(
+            f"Truncated dendrogram showing last {max_labels} merged clusters "
+            f"({len(labels)} total features)"
+        )
     else:
         ax.set_xlabel("Deleted features")
     fig.tight_layout()
