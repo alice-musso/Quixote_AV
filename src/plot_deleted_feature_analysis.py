@@ -23,6 +23,12 @@ def parse_args():
         default=28.0,
         help="Scatter point size for UMAP plots.",
     )
+    parser.add_argument(
+        "--annotate-top-n",
+        type=int,
+        default=20,
+        help="Number of feature names to annotate on each UMAP plot.",
+    )
     return parser.parse_args()
 
 
@@ -57,6 +63,42 @@ def figure_size_for_features(n_features):
     return width, height
 
 
+def linkage_matrix_from_table(linkage_table):
+    return linkage_table[["left", "right", "distance", "count"]].to_numpy(dtype=float)
+
+
+def descendant_cache(linkage_matrix, n_leaves):
+    cache = {}
+
+    def descendants(node_id):
+        node_id = int(node_id)
+        if node_id in cache:
+            return cache[node_id]
+        if node_id < n_leaves:
+            cache[node_id] = [node_id]
+            return cache[node_id]
+        left = int(linkage_matrix[node_id - n_leaves, 0])
+        right = int(linkage_matrix[node_id - n_leaves, 1])
+        cache[node_id] = descendants(left) + descendants(right)
+        return cache[node_id]
+
+    return descendants
+
+
+def representative_feature_label(node_id, labels, linkage_matrix):
+    n_leaves = len(labels)
+    node_id = int(node_id)
+    if node_id < n_leaves:
+        return labels[node_id]
+
+    descendants = descendant_cache(linkage_matrix, n_leaves)(node_id)
+    representative_names = [labels[index] for index in descendants[:3]]
+    representative_text = " | ".join(representative_names)
+    if len(descendants) > 3:
+        representative_text += f" | ... (n={len(descendants)})"
+    return representative_text
+
+
 def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
     metadata = pd.read_csv(bundle_dir / "feature_metadata.csv")
     linkage_table = pd.read_csv(bundle_dir / "hierarchical_linkage.csv")
@@ -64,7 +106,7 @@ def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
         return None
 
     labels = metadata["feature_name"].astype(str).tolist()
-    linkage_matrix = linkage_table[["left", "right", "distance", "count"]].to_numpy(dtype=float)
+    linkage_matrix = linkage_matrix_from_table(linkage_table)
     use_truncated_view = len(labels) > max_labels
 
     fig, ax = plt.subplots(figsize=figure_size_for_features(len(labels)))
@@ -80,6 +122,7 @@ def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
                 "truncate_mode": "lastp",
                 "p": max_labels,
                 "show_leaf_counts": True,
+                "leaf_label_func": lambda node_id: representative_feature_label(node_id, labels, linkage_matrix),
             }
         )
     else:
@@ -115,6 +158,16 @@ def plot_umap(bundle_dir, plt, point_size):
     if umap_table.empty:
         return None
 
+    metadata_path = bundle_dir / "feature_metadata.csv"
+    if metadata_path.exists():
+        metadata = pd.read_csv(metadata_path)
+        if "feature_name" in umap_table.columns:
+            umap_table = umap_table.merge(
+                metadata,
+                on=["feature_name", "cluster_id"],
+                how="left",
+            )
+
     palette = build_cluster_palette(umap_table["cluster_id"], plt)
     fig, ax = plt.subplots(figsize=(9, 7))
     colors = [palette.get(cluster_id, (0.4, 0.4, 0.4, 1.0)) for cluster_id in umap_table["cluster_id"]]
@@ -129,16 +182,29 @@ def plot_umap(bundle_dir, plt, point_size):
     )
 
     top_flip = umap_table.copy()
+    annotation_candidates = pd.DataFrame()
     if "decision_flip_count" in top_flip.columns:
-        top_flip = top_flip.sort_values(["decision_flip_count", "feature_name"], ascending=[False, True]).head(12)
-        for _, row in top_flip.iterrows():
-            if row.get("decision_flip_count", 0) > 0:
-                ax.annotate(
-                    row["feature_name"],
-                    (row["umap_1"], row["umap_2"]),
-                    fontsize=7,
-                    alpha=0.9,
-                )
+        annotation_candidates = top_flip.sort_values(
+            ["decision_flip_count", "contrast", "feature_name"],
+            ascending=[False, False, True],
+        )
+        annotation_candidates = annotation_candidates[annotation_candidates["decision_flip_count"] > 0]
+
+    if annotation_candidates.empty:
+        sort_columns = [column for column in ["contrast", "document_prevalence", "feature_name"] if column in umap_table.columns]
+        if sort_columns:
+            ascending = [False if column != "feature_name" else True for column in sort_columns]
+            annotation_candidates = umap_table.sort_values(sort_columns, ascending=ascending)
+        else:
+            annotation_candidates = umap_table.copy()
+
+    for _, row in annotation_candidates.head(plot_umap.annotate_top_n).iterrows():
+        ax.annotate(
+            row["feature_name"],
+            (row["umap_1"], row["umap_2"]),
+            fontsize=7,
+            alpha=0.9,
+        )
 
     ax.set_title(f"UMAP Projection: {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
     ax.set_xlabel("UMAP 1")
@@ -163,6 +229,7 @@ def main():
         raise SystemExit(f"No analysis bundles found under {root_dir}")
 
     generated_rows = []
+    plot_umap.annotate_top_n = args.annotate_top_n
     for bundle_dir in bundles:
         dendrogram_path = plot_dendrogram(bundle_dir, plt, dendrogram_fn, args.max_labels)
         umap_path = plot_umap(bundle_dir, plt, args.point_size)
