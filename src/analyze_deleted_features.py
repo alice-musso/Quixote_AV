@@ -197,6 +197,12 @@ def dense_feature_matrix(X):
     return np.asarray(X, dtype=float)
 
 
+def sanitize_feature_vectors(feature_vectors):
+    feature_vectors = np.asarray(feature_vectors, dtype=float)
+    feature_vectors = np.nan_to_num(feature_vectors, nan=0.0, posinf=0.0, neginf=0.0)
+    return feature_vectors
+
+
 def feature_family(feature_name):
     return feature_name.split(":", 1)[0]
 
@@ -235,14 +241,17 @@ def choose_cluster_count(n_features, requested_clusters):
 
 
 def compute_hierarchical_labels(feature_vectors, n_clusters):
+    feature_vectors = sanitize_feature_vectors(feature_vectors)
     if feature_vectors.shape[0] == 1:
         return np.array([1], dtype=int), pd.DataFrame(
             [{"left": 0, "right": 0, "distance": 0.0, "count": 1}]
         )
 
     distances = pdist(feature_vectors, metric="cosine")
-    if np.allclose(distances, 0.0):
+    if not np.all(np.isfinite(distances)) or np.allclose(distances, 0.0):
         distances = pdist(feature_vectors, metric="euclidean")
+    if not np.all(np.isfinite(distances)):
+        distances = np.nan_to_num(distances, nan=0.0, posinf=0.0, neginf=0.0)
     linkage_matrix = linkage(distances, method="average", optimal_ordering=True)
     labels = fcluster(linkage_matrix, t=n_clusters, criterion="maxclust")
     linkage_table = pd.DataFrame(
@@ -253,6 +262,7 @@ def compute_hierarchical_labels(feature_vectors, n_clusters):
 
 
 def compute_umap_projection(feature_vectors, args):
+    feature_vectors = sanitize_feature_vectors(feature_vectors)
     try:
         import umap
     except ImportError:
@@ -273,6 +283,7 @@ def compute_umap_projection(feature_vectors, args):
 
 
 def compute_nearest_neighbors(feature_vectors, metadata, nn_k):
+    feature_vectors = sanitize_feature_vectors(feature_vectors)
     if feature_vectors.shape[0] <= 1:
         return pd.DataFrame()
     n_neighbors = min(nn_k + 1, feature_vectors.shape[0])
