@@ -29,6 +29,18 @@ def parse_args():
         default=20,
         help="Number of feature names to annotate on each UMAP plot.",
     )
+    parser.add_argument(
+        "--strip-family-prefix",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Strip the feature family prefix from labels in plots.",
+    )
+    parser.add_argument(
+        "--label-max-chars",
+        type=int,
+        default=48,
+        help="Maximum length of plotted feature labels before truncation.",
+    )
     return parser.parse_args()
 
 
@@ -67,6 +79,15 @@ def linkage_matrix_from_table(linkage_table):
     return linkage_table[["left", "right", "distance", "count"]].to_numpy(dtype=float)
 
 
+def format_feature_label(feature_name, strip_family_prefix, label_max_chars):
+    label = str(feature_name)
+    if strip_family_prefix and ":" in label:
+        label = label.split(":", 1)[1]
+    if len(label) > label_max_chars:
+        label = label[: max(0, label_max_chars - 3)] + "..."
+    return label
+
+
 def descendant_cache(linkage_matrix, n_leaves):
     cache = {}
 
@@ -74,32 +95,44 @@ def descendant_cache(linkage_matrix, n_leaves):
         node_id = int(node_id)
         if node_id in cache:
             return cache[node_id]
-        if node_id < n_leaves:
-            cache[node_id] = [node_id]
-            return cache[node_id]
-        left = int(linkage_matrix[node_id - n_leaves, 0])
-        right = int(linkage_matrix[node_id - n_leaves, 1])
-        cache[node_id] = descendants(left) + descendants(right)
-        return cache[node_id]
+        stack = [node_id]
+        leaves = []
+        while stack:
+            current = int(stack.pop())
+            if current in cache:
+                leaves.extend(cache[current])
+                continue
+            if current < n_leaves:
+                leaves.append(current)
+                continue
+            left = int(linkage_matrix[current - n_leaves, 0])
+            right = int(linkage_matrix[current - n_leaves, 1])
+            stack.append(right)
+            stack.append(left)
+        cache[node_id] = leaves
+        return leaves
 
     return descendants
 
 
-def representative_feature_label(node_id, labels, linkage_matrix):
+def representative_feature_label(node_id, labels, linkage_matrix, strip_family_prefix, label_max_chars):
     n_leaves = len(labels)
     node_id = int(node_id)
     if node_id < n_leaves:
-        return labels[node_id]
+        return format_feature_label(labels[node_id], strip_family_prefix, label_max_chars)
 
     descendants = descendant_cache(linkage_matrix, n_leaves)(node_id)
-    representative_names = [labels[index] for index in descendants[:3]]
+    representative_names = [
+        format_feature_label(labels[index], strip_family_prefix, label_max_chars)
+        for index in descendants[:3]
+    ]
     representative_text = " | ".join(representative_names)
     if len(descendants) > 3:
         representative_text += f" | ... (n={len(descendants)})"
     return representative_text
 
 
-def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
+def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels, strip_family_prefix, label_max_chars):
     metadata = pd.read_csv(bundle_dir / "feature_metadata.csv")
     linkage_table = pd.read_csv(bundle_dir / "hierarchical_linkage.csv")
     if metadata.empty or linkage_table.empty:
@@ -122,11 +155,20 @@ def plot_dendrogram(bundle_dir, plt, dendrogram_fn, max_labels):
                 "truncate_mode": "lastp",
                 "p": max_labels,
                 "show_leaf_counts": True,
-                "leaf_label_func": lambda node_id: representative_feature_label(node_id, labels, linkage_matrix),
+                "leaf_label_func": lambda node_id: representative_feature_label(
+                    node_id,
+                    labels,
+                    linkage_matrix,
+                    strip_family_prefix,
+                    label_max_chars,
+                ),
             }
         )
     else:
-        dendrogram_kwargs["labels"] = labels
+        dendrogram_kwargs["labels"] = [
+            format_feature_label(label, strip_family_prefix, label_max_chars)
+            for label in labels
+        ]
     dendrogram_fn(linkage_matrix, **dendrogram_kwargs)
     ax.set_title(f"Hierarchical Clustering: {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
     ax.set_ylabel("Distance")
@@ -150,7 +192,7 @@ def build_cluster_palette(cluster_ids, plt):
     return {cluster_id: cmap(index % cmap.N) for index, cluster_id in enumerate(unique_clusters)}
 
 
-def plot_umap(bundle_dir, plt, point_size):
+def plot_umap(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars):
     umap_path = bundle_dir / "umap_projection.csv"
     if not umap_path.exists():
         return None
@@ -200,7 +242,7 @@ def plot_umap(bundle_dir, plt, point_size):
 
     for _, row in annotation_candidates.head(plot_umap.annotate_top_n).iterrows():
         ax.annotate(
-            row["feature_name"],
+            format_feature_label(row["feature_name"], strip_family_prefix, label_max_chars),
             (row["umap_1"], row["umap_2"]),
             fontsize=7,
             alpha=0.9,
@@ -231,8 +273,21 @@ def main():
     generated_rows = []
     plot_umap.annotate_top_n = args.annotate_top_n
     for bundle_dir in bundles:
-        dendrogram_path = plot_dendrogram(bundle_dir, plt, dendrogram_fn, args.max_labels)
-        umap_path = plot_umap(bundle_dir, plt, args.point_size)
+        dendrogram_path = plot_dendrogram(
+            bundle_dir,
+            plt,
+            dendrogram_fn,
+            args.max_labels,
+            args.strip_family_prefix,
+            args.label_max_chars,
+        )
+        umap_path = plot_umap(
+            bundle_dir,
+            plt,
+            args.point_size,
+            args.strip_family_prefix,
+            args.label_max_chars,
+        )
         generated_rows.append(
             {
                 "bundle": bundle_label(bundle_dir, root_dir),
