@@ -9,6 +9,8 @@ import pandas as pd
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 from scipy import sparse
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
 from authorship_verification import AuthorshipVerification
@@ -240,6 +242,29 @@ def choose_cluster_count(n_features, requested_clusters):
     return max(2, min(requested_clusters, n_features))
 
 
+def choose_elbow_cluster_count(inertia_table):
+    if inertia_table.empty:
+        return 1
+    if len(inertia_table) == 1:
+        return int(inertia_table.iloc[0]["k"])
+
+    coordinates = inertia_table[["k", "inertia"]].to_numpy(dtype=float)
+    start = coordinates[0]
+    end = coordinates[-1]
+    baseline = end - start
+    baseline_norm = np.linalg.norm(baseline)
+    if baseline_norm == 0.0:
+        return int(inertia_table.iloc[0]["k"])
+
+    distances = []
+    for point in coordinates:
+        offset = point - start
+        distance = abs(np.cross(baseline, offset)) / baseline_norm
+        distances.append(float(distance))
+    best_index = int(np.argmax(distances))
+    return int(inertia_table.iloc[best_index]["k"])
+
+
 def compute_hierarchical_labels(feature_vectors, n_clusters):
     feature_vectors = sanitize_feature_vectors(feature_vectors)
     if feature_vectors.shape[0] == 1:
@@ -282,6 +307,76 @@ def compute_umap_projection(feature_vectors, args):
     return projection, "UMAP completed."
 
 
+def compute_pca_projection(feature_vectors):
+    feature_vectors = sanitize_feature_vectors(feature_vectors)
+    if feature_vectors.shape[0] < 2:
+        return None, "PCA skipped: need at least 2 features."
+
+    n_components = min(2, feature_vectors.shape[0], feature_vectors.shape[1])
+    if n_components < 2:
+        return None, "PCA skipped: need at least 2 dimensions."
+
+    reducer = PCA(n_components=2)
+    embedding = reducer.fit_transform(feature_vectors)
+    projection = pd.DataFrame(embedding, columns=["pca_1", "pca_2"])
+    projection["explained_variance_ratio_1"] = float(reducer.explained_variance_ratio_[0])
+    projection["explained_variance_ratio_2"] = float(reducer.explained_variance_ratio_[1])
+    return projection, "PCA completed."
+
+
+def compute_kmeans_outputs(feature_vectors, metadata, requested_clusters, random_state):
+    feature_vectors = sanitize_feature_vectors(feature_vectors)
+    n_features = feature_vectors.shape[0]
+    if n_features == 0:
+        empty = pd.DataFrame()
+        return np.asarray([], dtype=int), empty, empty
+    if n_features == 1:
+        labels = np.array([1], dtype=int)
+        inertia_table = pd.DataFrame([{"k": 1, "inertia": 0.0}])
+        representatives = metadata[["feature_name"]].copy()
+        representatives.insert(0, "cluster_id", 1)
+        representatives.insert(1, "rank_within_cluster", 1)
+        representatives["distance_to_centroid"] = 0.0
+        return labels, inertia_table, representatives
+
+    max_k = choose_cluster_count(n_features, requested_clusters)
+    inertia_rows = []
+    for k in range(1, max_k + 1):
+        model = KMeans(n_clusters=k, n_init=20, random_state=random_state)
+        model.fit(feature_vectors)
+        inertia_rows.append({"k": k, "inertia": float(model.inertia_)})
+
+    inertia_table = pd.DataFrame(inertia_rows)
+    selected_k = choose_elbow_cluster_count(inertia_table)
+    selected_k = max(1, min(selected_k, n_features))
+
+    final_model = KMeans(n_clusters=selected_k, n_init=20, random_state=random_state)
+    final_model.fit(feature_vectors)
+    labels = final_model.labels_.astype(int) + 1
+
+    distances = final_model.transform(feature_vectors)
+    rows = []
+    for cluster_index in range(selected_k):
+        cluster_id = cluster_index + 1
+        member_indices = np.where(labels == cluster_id)[0]
+        if member_indices.size == 0:
+            continue
+        member_distances = distances[member_indices, cluster_index]
+        ranked_positions = np.argsort(member_distances)[:10]
+        for rank, local_position in enumerate(ranked_positions, start=1):
+            feature_index = int(member_indices[local_position])
+            rows.append(
+                {
+                    "cluster_id": cluster_id,
+                    "rank_within_cluster": rank,
+                    "feature_name": metadata.iloc[feature_index]["feature_name"],
+                    "distance_to_centroid": float(member_distances[local_position]),
+                }
+            )
+    representatives = pd.DataFrame(rows)
+    return labels, inertia_table, representatives
+
+
 def compute_nearest_neighbors(feature_vectors, metadata, nn_k):
     feature_vectors = sanitize_feature_vectors(feature_vectors)
     if feature_vectors.shape[0] <= 1:
@@ -321,11 +416,42 @@ def cluster_flip_summary(metadata):
     return summary
 
 
+def kmeans_cluster_summary(metadata):
+    if metadata.empty or "kmeans_cluster_id" not in metadata.columns:
+        return pd.DataFrame()
+    summary = (
+        metadata.groupby("kmeans_cluster_id", dropna=False)
+        .agg(
+            cluster_size=("feature_name", "size"),
+            flip_event_total=("decision_flip_count", "sum"),
+            flipped_feature_count=("decision_flip_feature", "sum"),
+            mean_contrast=("contrast", "mean"),
+        )
+        .reset_index()
+        .rename(columns={"kmeans_cluster_id": "cluster_id"})
+    )
+    summary["flipped_feature_rate"] = summary["flipped_feature_count"] / summary["cluster_size"]
+    return summary
+
+
 def write_text(path, text):
     Path(path).write_text(text + "\n", encoding="utf-8")
 
 
-def save_bundle(bundle_dir, feature_vectors, metadata, document_metadata, linkage_table, neighbors, umap_projection, umap_status):
+def save_bundle(
+    bundle_dir,
+    feature_vectors,
+    metadata,
+    document_metadata,
+    linkage_table,
+    neighbors,
+    umap_projection,
+    umap_status,
+    pca_projection,
+    pca_status,
+    kmeans_inertia_table,
+    kmeans_representatives,
+):
     bundle_dir.mkdir(parents=True, exist_ok=True)
     document_columns = [f"doc_{index:04d}" for index in range(feature_vectors.shape[1])]
     matrix_table = pd.DataFrame(feature_vectors, columns=document_columns)
@@ -337,10 +463,20 @@ def save_bundle(bundle_dir, feature_vectors, metadata, document_metadata, linkag
     linkage_table.to_csv(bundle_dir / "hierarchical_linkage.csv", index=False)
     neighbors.to_csv(bundle_dir / "nearest_neighbors.csv", index=False)
     cluster_flip_summary(metadata).to_csv(bundle_dir / "cluster_flip_summary.csv", index=False)
+    kmeans_cluster_summary(metadata).to_csv(bundle_dir / "kmeans_cluster_summary.csv", index=False)
+    kmeans_inertia_table.to_csv(bundle_dir / "kmeans_elbow.csv", index=False)
+    kmeans_representatives.to_csv(bundle_dir / "kmeans_top_features.csv", index=False)
     if umap_projection is not None:
         umap_output = pd.concat([metadata[["feature_name", "cluster_id"]].reset_index(drop=True), umap_projection], axis=1)
         umap_output.to_csv(bundle_dir / "umap_projection.csv", index=False)
+    if pca_projection is not None:
+        pca_output = pd.concat(
+            [metadata[["feature_name", "kmeans_cluster_id"]].reset_index(drop=True), pca_projection],
+            axis=1,
+        )
+        pca_output.to_csv(bundle_dir / "pca_projection.csv", index=False)
     write_text(bundle_dir / "umap_status.txt", umap_status)
+    write_text(bundle_dir / "pca_status.txt", pca_status)
 
 
 def analyze_feature_bundle(feature_vectors, metadata, document_metadata, args, output_dir):
@@ -351,8 +487,29 @@ def analyze_feature_bundle(feature_vectors, metadata, document_metadata, args, o
     metadata = metadata.copy()
     metadata["cluster_id"] = cluster_labels
     umap_projection, umap_status = compute_umap_projection(feature_vectors, args)
+    pca_projection, pca_status = compute_pca_projection(feature_vectors)
+    kmeans_cluster_labels, kmeans_inertia_table, kmeans_representatives = compute_kmeans_outputs(
+        feature_vectors,
+        metadata,
+        requested_clusters=args.n_clusters,
+        random_state=args.random_state,
+    )
+    metadata["kmeans_cluster_id"] = kmeans_cluster_labels
     neighbors = compute_nearest_neighbors(feature_vectors, metadata, args.nn_k)
-    save_bundle(output_dir, feature_vectors, metadata, document_metadata, linkage_table, neighbors, umap_projection, umap_status)
+    save_bundle(
+        output_dir,
+        feature_vectors,
+        metadata,
+        document_metadata,
+        linkage_table,
+        neighbors,
+        umap_projection,
+        umap_status,
+        pca_projection,
+        pca_status,
+        kmeans_inertia_table,
+        kmeans_representatives,
+    )
 
 
 def main():
