@@ -304,7 +304,15 @@ def plot_pca(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars):
                 left_on=[cluster_column, "feature_name"],
                 right_on=["cluster_id", "feature_name"],
                 how="inner",
-            ).sort_values(["cluster_id", "rank_within_cluster"])
+            )
+            sort_cluster_column = "cluster_id"
+            if sort_cluster_column not in annotation_candidates.columns:
+                candidate_columns = [column for column in annotation_candidates.columns if "cluster_id" in column]
+                if candidate_columns:
+                    sort_cluster_column = candidate_columns[0]
+            annotation_candidates = annotation_candidates.sort_values(
+                [sort_cluster_column, "rank_within_cluster"]
+            )
 
     if annotation_candidates.empty:
         sort_columns = [column for column in ["decision_flip_count", "contrast", "feature_name"] if column in pca_table.columns]
