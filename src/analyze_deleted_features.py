@@ -10,7 +10,6 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 from scipy import sparse
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
 from authorship_verification import AuthorshipVerification
@@ -307,23 +306,6 @@ def compute_umap_projection(feature_vectors, args):
     return projection, "UMAP completed."
 
 
-def compute_pca_projection(feature_vectors):
-    feature_vectors = sanitize_feature_vectors(feature_vectors)
-    if feature_vectors.shape[0] < 2:
-        return None, "PCA skipped: need at least 2 features."
-
-    n_components = min(2, feature_vectors.shape[0], feature_vectors.shape[1])
-    if n_components < 2:
-        return None, "PCA skipped: need at least 2 dimensions."
-
-    reducer = PCA(n_components=2)
-    embedding = reducer.fit_transform(feature_vectors)
-    projection = pd.DataFrame(embedding, columns=["pca_1", "pca_2"])
-    projection["explained_variance_ratio_1"] = float(reducer.explained_variance_ratio_[0])
-    projection["explained_variance_ratio_2"] = float(reducer.explained_variance_ratio_[1])
-    return projection, "PCA completed."
-
-
 def compute_kmeans_outputs(feature_vectors, metadata, requested_clusters, random_state):
     feature_vectors = sanitize_feature_vectors(feature_vectors)
     n_features = feature_vectors.shape[0]
@@ -447,8 +429,6 @@ def save_bundle(
     neighbors,
     umap_projection,
     umap_status,
-    pca_projection,
-    pca_status,
     kmeans_inertia_table,
     kmeans_representatives,
 ):
@@ -467,16 +447,12 @@ def save_bundle(
     kmeans_inertia_table.to_csv(bundle_dir / "kmeans_elbow.csv", index=False)
     kmeans_representatives.to_csv(bundle_dir / "kmeans_top_features.csv", index=False)
     if umap_projection is not None:
-        umap_output = pd.concat([metadata[["feature_name", "cluster_id"]].reset_index(drop=True), umap_projection], axis=1)
-        umap_output.to_csv(bundle_dir / "umap_projection.csv", index=False)
-    if pca_projection is not None:
-        pca_output = pd.concat(
-            [metadata[["feature_name", "kmeans_cluster_id"]].reset_index(drop=True), pca_projection],
+        umap_output = pd.concat(
+            [metadata[["feature_name", "cluster_id", "kmeans_cluster_id"]].reset_index(drop=True), umap_projection],
             axis=1,
         )
-        pca_output.to_csv(bundle_dir / "pca_projection.csv", index=False)
+        umap_output.to_csv(bundle_dir / "umap_projection.csv", index=False)
     write_text(bundle_dir / "umap_status.txt", umap_status)
-    write_text(bundle_dir / "pca_status.txt", pca_status)
 
 
 def analyze_feature_bundle(feature_vectors, metadata, document_metadata, args, output_dir):
@@ -487,7 +463,6 @@ def analyze_feature_bundle(feature_vectors, metadata, document_metadata, args, o
     metadata = metadata.copy()
     metadata["cluster_id"] = cluster_labels
     umap_projection, umap_status = compute_umap_projection(feature_vectors, args)
-    pca_projection, pca_status = compute_pca_projection(feature_vectors)
     kmeans_cluster_labels, kmeans_inertia_table, kmeans_representatives = compute_kmeans_outputs(
         feature_vectors,
         metadata,
@@ -505,8 +480,6 @@ def analyze_feature_bundle(feature_vectors, metadata, document_metadata, args, o
         neighbors,
         umap_projection,
         umap_status,
-        pca_projection,
-        pca_status,
         kmeans_inertia_table,
         kmeans_representatives,
     )

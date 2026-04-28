@@ -204,15 +204,15 @@ def plot_umap(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars)
     if metadata_path.exists():
         metadata = pd.read_csv(metadata_path)
         if "feature_name" in umap_table.columns:
-            umap_table = umap_table.merge(
-                metadata,
-                on=["feature_name", "cluster_id"],
-                how="left",
-            )
+            umap_table = umap_table.merge(metadata, on="feature_name", how="left", suffixes=("", "_meta"))
 
-    palette = build_cluster_palette(umap_table["cluster_id"], plt)
+    cluster_column = "kmeans_cluster_id"
+    if cluster_column not in umap_table.columns:
+        cluster_column = "cluster_id"
+
+    palette = build_cluster_palette(umap_table[cluster_column], plt)
     fig, ax = plt.subplots(figsize=(9, 7))
-    colors = [palette.get(cluster_id, (0.4, 0.4, 0.4, 1.0)) for cluster_id in umap_table["cluster_id"]]
+    colors = [palette.get(cluster_id, (0.4, 0.4, 0.4, 1.0)) for cluster_id in umap_table[cluster_column]]
     ax.scatter(
         umap_table["umap_1"],
         umap_table["umap_2"],
@@ -223,17 +223,20 @@ def plot_umap(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars)
         edgecolors="black",
     )
 
-    top_flip = umap_table.copy()
     annotation_candidates = pd.DataFrame()
-    if "decision_flip_count" in top_flip.columns:
-        annotation_candidates = top_flip.sort_values(
-            ["decision_flip_count", "contrast", "feature_name"],
-            ascending=[False, False, True],
-        )
-        annotation_candidates = annotation_candidates[annotation_candidates["decision_flip_count"] > 0]
+    representative_path = bundle_dir / "kmeans_top_features.csv"
+    if representative_path.exists():
+        representatives = pd.read_csv(representative_path)
+        if not representatives.empty:
+            annotation_candidates = umap_table.merge(
+                representatives[["cluster_id", "rank_within_cluster", "feature_name"]],
+                left_on=[cluster_column, "feature_name"],
+                right_on=["cluster_id", "feature_name"],
+                how="inner",
+            ).sort_values(["cluster_id", "rank_within_cluster"])
 
     if annotation_candidates.empty:
-        sort_columns = [column for column in ["contrast", "document_prevalence", "feature_name"] if column in umap_table.columns]
+        sort_columns = [column for column in ["decision_flip_count", "contrast", "document_prevalence", "feature_name"] if column in umap_table.columns]
         if sort_columns:
             ascending = [False if column != "feature_name" else True for column in sort_columns]
             annotation_candidates = umap_table.sort_values(sort_columns, ascending=ascending)
@@ -248,101 +251,11 @@ def plot_umap(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars)
             alpha=0.9,
         )
 
-    ax.set_title(f"UMAP Projection: {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
+    ax.set_title(f"UMAP Projection (K-Means): {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
     ax.set_xlabel("UMAP 1")
     ax.set_ylabel("UMAP 2")
     fig.tight_layout()
     output_path = bundle_dir / "umap_scatter.png"
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    return output_path
-
-
-def plot_pca(bundle_dir, plt, point_size, strip_family_prefix, label_max_chars):
-    pca_path = bundle_dir / "pca_projection.csv"
-    if not pca_path.exists():
-        return None
-    pca_table = pd.read_csv(pca_path)
-    if pca_table.empty:
-        return None
-
-    metadata_path = bundle_dir / "feature_metadata.csv"
-    if metadata_path.exists():
-        metadata = pd.read_csv(metadata_path)
-        if "feature_name" in pca_table.columns:
-            pca_table = pca_table.merge(
-                metadata,
-                on="feature_name",
-                how="left",
-                suffixes=("", "_meta"),
-            )
-
-    cluster_column = "kmeans_cluster_id"
-    if cluster_column not in pca_table.columns:
-        return None
-
-    palette = build_cluster_palette(pca_table[cluster_column], plt)
-    fig, ax = plt.subplots(figsize=(9, 7))
-    colors = [palette.get(cluster_id, (0.4, 0.4, 0.4, 1.0)) for cluster_id in pca_table[cluster_column]]
-    ax.scatter(
-        pca_table["pca_1"],
-        pca_table["pca_2"],
-        c=colors,
-        s=point_size,
-        alpha=0.9,
-        linewidths=0.2,
-        edgecolors="black",
-    )
-
-    annotation_candidates = pd.DataFrame()
-    representative_path = bundle_dir / "kmeans_top_features.csv"
-    if representative_path.exists():
-        representatives = pd.read_csv(representative_path)
-        if not representatives.empty:
-            annotation_candidates = pca_table.merge(
-                representatives[["cluster_id", "rank_within_cluster", "feature_name"]],
-                left_on=[cluster_column, "feature_name"],
-                right_on=["cluster_id", "feature_name"],
-                how="inner",
-            )
-            sort_cluster_column = "cluster_id"
-            if sort_cluster_column not in annotation_candidates.columns:
-                candidate_columns = [column for column in annotation_candidates.columns if "cluster_id" in column]
-                if candidate_columns:
-                    sort_cluster_column = candidate_columns[0]
-            annotation_candidates = annotation_candidates.sort_values(
-                [sort_cluster_column, "rank_within_cluster"]
-            )
-
-    if annotation_candidates.empty:
-        sort_columns = [column for column in ["decision_flip_count", "contrast", "feature_name"] if column in pca_table.columns]
-        if sort_columns:
-            ascending = [False if column != "feature_name" else True for column in sort_columns]
-            annotation_candidates = pca_table.sort_values(sort_columns, ascending=ascending)
-        else:
-            annotation_candidates = pca_table.copy()
-
-    for _, row in annotation_candidates.head(plot_pca.annotate_top_n).iterrows():
-        ax.annotate(
-            format_feature_label(row["feature_name"], strip_family_prefix, label_max_chars),
-            (row["pca_1"], row["pca_2"]),
-            fontsize=7,
-            alpha=0.9,
-        )
-
-    variance_1 = pca_table["explained_variance_ratio_1"].iloc[0] if "explained_variance_ratio_1" in pca_table.columns else None
-    variance_2 = pca_table["explained_variance_ratio_2"].iloc[0] if "explained_variance_ratio_2" in pca_table.columns else None
-    axis_1 = "PCA 1"
-    axis_2 = "PCA 2"
-    if variance_1 is not None and variance_2 is not None:
-        axis_1 = f"PCA 1 ({variance_1 * 100:.1f}%)"
-        axis_2 = f"PCA 2 ({variance_2 * 100:.1f}%)"
-
-    ax.set_title(f"PCA Projection (K-Means): {bundle_dir.relative_to(bundle_dir.parent.parent if bundle_dir.parent.name == 'families' else bundle_dir.parent)}")
-    ax.set_xlabel(axis_1)
-    ax.set_ylabel(axis_2)
-    fig.tight_layout()
-    output_path = bundle_dir / "pca_scatter.png"
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     return output_path
@@ -362,7 +275,6 @@ def main():
 
     generated_rows = []
     plot_umap.annotate_top_n = args.annotate_top_n
-    plot_pca.annotate_top_n = args.annotate_top_n
     for bundle_dir in bundles:
         dendrogram_path = plot_dendrogram(
             bundle_dir,
@@ -379,19 +291,11 @@ def main():
             args.strip_family_prefix,
             args.label_max_chars,
         )
-        pca_path = plot_pca(
-            bundle_dir,
-            plt,
-            args.point_size,
-            args.strip_family_prefix,
-            args.label_max_chars,
-        )
         generated_rows.append(
             {
                 "bundle": bundle_label(bundle_dir, root_dir),
                 "dendrogram_png": str(dendrogram_path) if dendrogram_path else "",
                 "umap_png": str(umap_path) if umap_path else "",
-                "pca_png": str(pca_path) if pca_path else "",
             }
         )
 
