@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+import unicodedata
 
 import pandas as pd
 
@@ -30,16 +31,44 @@ def build_score_table(author_score_table, model_selection_score):
     return score_table
 
 
-def _prediction_columns(predictions, prefix):
-    columns = []
-    for row_index in range(len(predictions.predicted_table)):
-        row = {}
-        for author in predictions.authors:
-            row[f"{prefix}_pred_{author}"] = int(predictions.predicted_table.iloc[row_index][author])
-            if author in predictions.scored_authors:
-                row[f"{prefix}_score_{author}"] = predictions.score_table.iloc[row_index][author]
-        columns.append(row)
-    return columns
+def _posterior_table(score_table):
+    return score_table.copy().astype(float)
+
+
+def _normalized_title(title):
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", title.lower())
+        if not unicodedata.combining(character)
+    )
+
+
+def _manuscript_sort_key(title):
+    normalized_title = _normalized_title(title)
+    part_order = [
+        "prologo",
+        "prima novelle",
+        "nucleo",
+        "seconda novelle",
+        "quijote apocrifo",
+    ]
+    for order, part_name in enumerate(part_order):
+        if part_name in normalized_title:
+            return order, normalized_title
+    return len(part_order), normalized_title
+
+
+def _manuscript_columns(test_corpus):
+    rows = []
+    for row_index, book in enumerate(test_corpus):
+        rows.append(
+            {
+                "row_index": row_index,
+                "title": book.title,
+                "sort_key": _manuscript_sort_key(book.title),
+            }
+        )
+    return sorted(rows, key=lambda row: row["sort_key"])
 
 
 def build_prediction_table(
@@ -47,24 +76,27 @@ def build_prediction_table(
     post_predictions,
     test_corpus,
 ):
-    pre_rows = _prediction_columns(
-        predictions=pre_predictions,
-        prefix="pre_ablation",
-    )
-    post_rows = _prediction_columns(
-        predictions=post_predictions,
-        prefix="post_ablation",
-    )
-
+    pre_posteriors = _posterior_table(pre_predictions.score_table)
+    post_posteriors = _posterior_table(post_predictions.score_table)
+    manuscript_columns = _manuscript_columns(test_corpus)
     rows = []
-    for row_index, book in enumerate(test_corpus):
-        row = {
-            "title": book.title,
-            "author": book.original_author,
-        }
-        row.update(pre_rows[row_index])
-        row.update(post_rows[row_index])
-        rows.append(row)
+    for author in pre_predictions.authors:
+        author_rows = [
+            ("pre_ablation_prediction", pre_predictions.predicted_table),
+            ("pre_ablation_score", pre_predictions.score_table),
+            ("pre_ablation_posterior", pre_posteriors),
+            ("post_ablation_posterior", post_posteriors),
+        ]
+        for statistic, table in author_rows:
+            row = {"author": author, "statistic": statistic}
+            for column in manuscript_columns:
+                row_index = column["row_index"]
+                title = column["title"]
+                if author in table.columns:
+                    row[title] = table.iloc[row_index][author]
+                else:
+                    row[title] = pd.NA
+            rows.append(row)
     return pd.DataFrame(rows)
 
 

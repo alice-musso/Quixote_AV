@@ -423,7 +423,7 @@ class QuixoteInferenceExperiment:
             verifier_artifacts.X_test,
             train_author_labels=train_author_labels,
             authors=predictable_authors,
-            score_authors=eligible_authors,
+            score_authors=predictable_authors,
         )
 
         post_ablation_author_scores = self._predict_each_author(
@@ -433,7 +433,7 @@ class QuixoteInferenceExperiment:
             X_test_ablated,
             train_author_labels=train_author_labels,
             authors=predictable_authors,
-            score_authors=eligible_authors,
+            score_authors=predictable_authors,
         )
 
         author_score_table = pd.concat(
