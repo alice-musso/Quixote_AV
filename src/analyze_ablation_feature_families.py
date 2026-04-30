@@ -8,6 +8,8 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ABLATION_PATH = PROJECT_ROOT / "results" / "inference" / "ablation.csv"
+DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "results" / "inference" / "ablation_feature_families.csv"
+DEFAULT_PLOT_PATH = PROJECT_ROOT / "results" / "inference" / "ablation_feature_families.png"
 DEFAULT_TRAIN_DIR = (
     PROJECT_ROOT / "corpus" / "training"
     if (PROJECT_ROOT / "corpus" / "training").exists()
@@ -27,8 +29,22 @@ def parse_args():
     )
     parser.add_argument(
         "--output",
-        default=None,
+        default=str(DEFAULT_OUTPUT_PATH),
         help="Optional output path. Supports .csv and .json.",
+    )
+    parser.add_argument(
+        "--plot-output",
+        default=str(DEFAULT_PLOT_PATH),
+        help="Optional barplot output path. Use an empty string to skip plotting.",
+    )
+    parser.add_argument(
+        "--top-n-deleted-features",
+        type=int,
+        default=1512,
+        help=(
+            "Analyze only the first N deleted features, ordered by deleted_order "
+            "when available. Use 0 or a negative value to analyze all deleted features."
+        ),
     )
     parser.add_argument("--train-dir", default=str(DEFAULT_TRAIN_DIR))
     parser.add_argument("--positive-author", default="Cervantes")
@@ -73,6 +89,18 @@ def feature_family(feature_name):
     if ":" not in feature_name:
         return "unknown"
     return feature_name.split(":", 1)[0]
+
+
+def first_deleted_features(ablation_table, top_n):
+    if top_n is None or top_n <= 0:
+        return ablation_table.copy()
+
+    table = ablation_table.copy()
+    if "deleted_order" in table.columns:
+        table = table.sort_values("deleted_order")
+    elif "rank" in table.columns:
+        table = table.sort_values("rank")
+    return table.head(top_n).reset_index(drop=True)
 
 
 def parse_family_sizes(family_size_args):
@@ -201,9 +229,87 @@ def save_summary(summary, output_path):
         summary.to_csv(output_path, index=False)
 
 
+def resolve_plot_path(plot_output):
+    if plot_output is not None and str(plot_output).strip():
+        return Path(plot_output)
+    return None
+
+
+def plot_family_summary(summary, output_path, top_n):
+    if output_path is None:
+        return None
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required to write the barplot.") from exc
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plot_table = summary.sort_values(
+        ["cancelled_features_in_family", "feature_family"],
+        ascending=[True, False],
+    )
+
+    fig_height = max(4, 0.55 * len(plot_table) + 1.5)
+    fig, ax_count = plt.subplots(figsize=(11, fig_height))
+    bars = ax_count.barh(
+        plot_table["feature_family"],
+        plot_table["cancelled_features_in_family"],
+        color="tab:blue",
+        alpha=0.82,
+        label="Cancelled features",
+    )
+    ax_count.set_xlabel("Cancelled features in family")
+    ax_count.set_ylabel("Feature family")
+    title_scope = (
+        f"first {top_n} deleted features"
+        if top_n is not None and top_n > 0
+        else "all deleted features"
+    )
+    ax_count.set_title(f"Deleted Ablation Features by Family ({title_scope})")
+    ax_count.grid(axis="x", alpha=0.25)
+
+    ax_percent = ax_count.twiny()
+    ax_percent.plot(
+        plot_table["cancelled_family_percentage"],
+        plot_table["feature_family"],
+        color="tab:orange",
+        marker="o",
+        linewidth=1.4,
+        label="Cancelled family percentage",
+    )
+    ax_percent.set_xlabel("Cancelled family percentage (%)")
+
+    for bar, percentage in zip(bars, plot_table["cancelled_family_percentage"]):
+        width = bar.get_width()
+        ax_count.text(
+            width,
+            bar.get_y() + bar.get_height() / 2,
+            f" {int(width)} | {percentage:.1f}%",
+            va="center",
+            fontsize=9,
+        )
+
+    handles_count, labels_count = ax_count.get_legend_handles_labels()
+    handles_percent, labels_percent = ax_percent.get_legend_handles_labels()
+    ax_count.legend(
+        handles_count + handles_percent,
+        labels_count + labels_percent,
+        loc="lower right",
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def main():
     args = parse_args()
     ablation_table = load_ablation_table(args.ablation_path)
+    ablation_table = first_deleted_features(
+        ablation_table,
+        top_n=args.top_n_deleted_features,
+    )
     family_sizes = recompute_family_sizes(args)
     family_sizes.update(parse_family_sizes(args.family_size))
     summary = build_family_summary(
@@ -214,6 +320,14 @@ def main():
     if args.output:
         save_summary(summary, args.output)
         print(f"\nSaved feature-family summary to {args.output}")
+    plot_path = resolve_plot_path(args.plot_output)
+    saved_plot_path = plot_family_summary(
+        summary,
+        output_path=plot_path,
+        top_n=args.top_n_deleted_features,
+    )
+    if saved_plot_path is not None:
+        print(f"Saved feature-family barplot to {saved_plot_path}")
 
 
 if __name__ == "__main__":
