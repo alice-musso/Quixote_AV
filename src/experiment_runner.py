@@ -134,12 +134,12 @@ class QuixoteInferenceExperiment:
             positive_author=self.config.positive_author,
         )
         positive_author_books = ablation_experiment.cervantes_only(train_corpus)
-        topic_documents, y_quijote, topic_groups = ablation_experiment.topic_labels(positive_author_books)
+        topic_documents, y_quijote, _topic_groups = ablation_experiment.topic_labels(positive_author_books)
         positive_author_train_matrix = verifier.transform_documents_with_selection(
             topic_documents,
             verifier_artifacts.feature_selection,
         )
-        feature_ranking, _ = ablation_experiment.compute_feature_ranking(
+        feature_ranking_artifacts = ablation_experiment.compute_feature_ranking(
             X=positive_author_train_matrix,
             y=y_quijote,
             random_state=self.config.random_state,
@@ -151,11 +151,11 @@ class QuixoteInferenceExperiment:
             class_weight=verifier_artifacts.hyperparams["class_weight"],
         )
         return ablation_experiment.ablate(
-            feature_ranking=feature_ranking,
-            X=positive_author_train_matrix,
-            X_test=positive_author_train_matrix,
-            y=y_quijote,
-            groups=topic_groups,
+            feature_ranking=feature_ranking_artifacts.feature_ranking,
+            X_train=feature_ranking_artifacts.X_train,
+            X_test=feature_ranking_artifacts.X_test,
+            y_train=feature_ranking_artifacts.y_train,
+            y_test=feature_ranking_artifacts.y_test,
             classifier=classifier,
             feature_names=verifier_artifacts.feature_selection.selected_feature_names,
         )

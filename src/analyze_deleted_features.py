@@ -133,7 +133,7 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         positive_author=args.positive_author,
     )
     positive_author_books = ablation_experiment.cervantes_only(train_corpus)
-    topic_documents, y_quijote, topic_groups, topic_metadata = build_topic_document_records(
+    topic_documents, y_quijote, _topic_groups, topic_metadata = build_topic_document_records(
         positive_author_books,
         args.target_title,
     )
@@ -156,7 +156,7 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
             deleted_feature_names,
         )
 
-    feature_ranking, _ = ablation_experiment.compute_feature_ranking(
+    feature_ranking_artifacts = ablation_experiment.compute_feature_ranking(
         X=positive_author_train_matrix,
         y=y_quijote,
         random_state=args.random_state,
@@ -167,11 +167,11 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         class_weight=verifier_artifacts.hyperparams["class_weight"],
     )
     ablation_artifacts = ablation_experiment.ablate(
-        feature_ranking=feature_ranking,
-        X=positive_author_train_matrix,
-        X_test=positive_author_train_matrix,
-        y=y_quijote,
-        groups=topic_groups,
+        feature_ranking=feature_ranking_artifacts.feature_ranking,
+        X_train=feature_ranking_artifacts.X_train,
+        X_test=feature_ranking_artifacts.X_test,
+        y_train=feature_ranking_artifacts.y_train,
+        y_test=feature_ranking_artifacts.y_test,
         classifier=classifier,
         feature_names=verifier_artifacts.feature_selection.selected_feature_names,
     )
