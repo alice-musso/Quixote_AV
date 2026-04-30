@@ -21,14 +21,17 @@ warnings.filterwarnings("ignore")
 class TopicAblationArtifacts:
     feature_ranking: list[int]
     ranked_feature_names: list[str]
+    feature_scores: np.ndarray
     deleted_features: list[int]
     deleted_feature_names: list[str]
+    deleted_feature_scores: list[float]
 
 
 @dataclass
 class TopicFeatureRankingArtifacts:
     feature_ranking: list[int]
     tsr_matrix: np.ndarray
+    posneg_information_gain: np.ndarray
     X_train: object
     X_test: object
     y_train: np.ndarray
@@ -79,6 +82,7 @@ class QuijoteAblationExperiment:
         return TopicFeatureRankingArtifacts(
             feature_ranking=feature_ranking,
             tsr_matrix=tsr_matrix,
+            posneg_information_gain=tsr_matrix,
             X_train=X_train,
             X_test=X_test,
             y_train=y_train,
@@ -94,6 +98,7 @@ class QuijoteAblationExperiment:
         y_test,
         classifier: BaseEstimator,
         feature_names=None,
+        feature_scores=None,
     ):
         if np.unique(y_train).size < 2:
             raise ValueError("Ablation training split must contain both topic classes.")
@@ -102,12 +107,14 @@ class QuijoteAblationExperiment:
         remove_per_step = 10
         delete_pointer = 0
         deleted_features = []
+        feature_scores = np.asarray(feature_scores if feature_scores is not None else [])
         feature_names = list(feature_names or [])
         ranked_feature_names = [
             feature_names[index] if index < len(feature_names) else f"feature_{index}"
             for index in feature_ranking
         ]
         deleted_feature_names = []
+        deleted_feature_scores = []
 
         print(f'prevalence Quijote"s: {np.mean(y_train) * 100:.3f}%')
         X_train = X_train.copy()
@@ -155,6 +162,10 @@ class QuijoteAblationExperiment:
                     feature_names[index] if index < len(feature_names) else f"feature_{index}"
                     for index in to_delete
                 )
+                deleted_feature_scores.extend(
+                    float(feature_scores[index]) if index < len(feature_scores) else np.nan
+                    for index in to_delete
+                )
                 delete_pointer += remove_per_step
                 features_remaining -= remove_per_step
                 print("deleting candidates")
@@ -166,8 +177,10 @@ class QuijoteAblationExperiment:
         return TopicAblationArtifacts(
             feature_ranking=feature_ranking,
             ranked_feature_names=ranked_feature_names,
+            feature_scores=feature_scores,
             deleted_features=deleted_features,
             deleted_feature_names=deleted_feature_names,
+            deleted_feature_scores=deleted_feature_scores,
         )
 
     def _zero_columns(self, X, column_indices):

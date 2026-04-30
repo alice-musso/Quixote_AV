@@ -129,9 +129,14 @@ def compute_deleted_posneg_information_gain(topic_matrix, y_quijote, deleted_fea
     return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=-1).flatten()
 
 
-def build_posneg_table(ablation_table, posneg_information_gain_values):
+def build_posneg_table(ablation_table, posneg_information_gain_values=None):
     table = ablation_table.copy()
-    table["posneg_information_gain"] = posneg_information_gain_values
+    if posneg_information_gain_values is not None:
+        table["posneg_information_gain"] = posneg_information_gain_values
+    if "posneg_information_gain" not in table.columns:
+        raise ValueError(
+            'Ablation table must contain "posneg_information_gain", or values must be provided.'
+        )
     if "deleted_order" in table.columns:
         table = table.sort_values("deleted_order").reset_index(drop=True)
     elif "rank" in table.columns:
@@ -170,14 +175,17 @@ def main():
     if "feature_index" not in ablation_table.columns:
         raise ValueError('Ablation table must contain a "feature_index" column.')
 
-    topic_matrix, y_quijote = prepare_topic_matrix(args)
-    deleted_feature_indices = ablation_table["feature_index"].astype(int).tolist()
-    posneg_information_gain_values = compute_deleted_posneg_information_gain(
-        topic_matrix,
-        y_quijote,
-        deleted_feature_indices,
-    )
-    posneg_table = build_posneg_table(ablation_table, posneg_information_gain_values)
+    if "posneg_information_gain" in ablation_table.columns:
+        posneg_table = build_posneg_table(ablation_table)
+    else:
+        topic_matrix, y_quijote = prepare_topic_matrix(args)
+        deleted_feature_indices = ablation_table["feature_index"].astype(int).tolist()
+        posneg_information_gain_values = compute_deleted_posneg_information_gain(
+            topic_matrix,
+            y_quijote,
+            deleted_feature_indices,
+        )
+        posneg_table = build_posneg_table(ablation_table, posneg_information_gain_values)
 
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)

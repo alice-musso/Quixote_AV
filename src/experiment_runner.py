@@ -126,7 +126,7 @@ class QuixoteInferenceExperiment:
     def _compute_ablation(self, verifier, verifier_artifacts, train_corpus):
         from quijote_classifier.quijote_experiment import QuijoteAblationExperiment
         from quijote_classifier.supervised_term_weighting.tsr_functions import (
-            posneg_information_gain, pointwise_mutual_information
+            posneg_information_gain,
         )
 
         ablation_experiment = QuijoteAblationExperiment(
@@ -158,6 +158,7 @@ class QuixoteInferenceExperiment:
             y_test=feature_ranking_artifacts.y_test,
             classifier=classifier,
             feature_names=verifier_artifacts.feature_selection.selected_feature_names,
+            feature_scores=feature_ranking_artifacts.posneg_information_gain,
         )
 
     def _apply_ablation_to_verifier_data(self, verifier_artifacts, ablation_artifacts):

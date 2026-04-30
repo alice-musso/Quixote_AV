@@ -174,12 +174,14 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         y_test=feature_ranking_artifacts.y_test,
         classifier=classifier,
         feature_names=verifier_artifacts.feature_selection.selected_feature_names,
+        feature_scores=feature_ranking_artifacts.posneg_information_gain,
     )
     deleted_feature_table = pd.DataFrame(
         {
             "deleted_order": np.arange(1, len(ablation_artifacts.deleted_features) + 1),
             "feature_index": ablation_artifacts.deleted_features,
             "feature_name": ablation_artifacts.deleted_feature_names,
+            "posneg_information_gain": ablation_artifacts.deleted_feature_scores,
         }
     )
     return (

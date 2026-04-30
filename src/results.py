@@ -101,6 +101,13 @@ def build_prediction_table(
 
 
 def build_ablation_table(ablation_artifacts):
+    columns = [
+        "deleted_order",
+        "rank",
+        "feature_index",
+        "feature_name",
+        "posneg_information_gain",
+    ]
     ranking_positions = {
         feature_index: rank
         for rank, feature_index in enumerate(ablation_artifacts.feature_ranking, start=1)
@@ -109,15 +116,17 @@ def build_ablation_table(ablation_artifacts):
     for deleted_order, feature_index in enumerate(ablation_artifacts.deleted_features, start=1):
         rank = ranking_positions.get(feature_index)
         feature_name = ablation_artifacts.deleted_feature_names[deleted_order - 1]
+        feature_score = ablation_artifacts.deleted_feature_scores[deleted_order - 1]
         rows.append(
             {
                 "deleted_order": deleted_order,
                 "rank": rank,
                 "feature_index": feature_index,
                 "feature_name": feature_name,
+                "posneg_information_gain": feature_score,
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def build_decision_change_table(decision_change_rows):
