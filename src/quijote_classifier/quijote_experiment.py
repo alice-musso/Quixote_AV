@@ -163,6 +163,14 @@ class QuijoteAblationExperiment:
 
         has_candidates = True
         degenerated = False
+
+        def threshold_accuracy(n, alpha=0.01, p0=0.5):
+            # k* = smallest k such that P(K >= k) <= alpha
+            k_star = binom.isf(alpha, n, p0)  # inverse survival function
+            return int(k_star), k_star / n
+
+        _, acc_threshold = threshold_accuracy(n=len(y_test))
+
         while has_candidates and not degenerated:
             estimator = clone(classifier)
             estimator.fit(X_train, y_train)
@@ -175,22 +183,12 @@ class QuijoteAblationExperiment:
             )
 
             positive_predictions = y_pred[y_test == 1]
-            acc = np.mean(positive_predictions) if len(positive_predictions) else 0.0  # aka recall
+            recall = np.mean(positive_predictions) if len(positive_predictions) else 0.0
             print(
-                f"Held-out split: Recall={acc * 100:.2f}% "
+                f"Held-out split: Recall={recall * 100:.2f}% "
             )
 
-            def threshold_accuracy(n, alpha=0.01, p0=0.5):
-                # k* = smallest k such that P(K >= k) <= alpha
-                k_star = binom.isf(alpha, n, p0)  # inverse survival function
-                return int(k_star), k_star / n
-
-            #_, acc_threshold = threshold_accuracy(n=len(y))
-            positive_count = int(np.sum(y_test))
-            acc_threshold = 0.0
-            if positive_count:
-                _, acc_threshold = threshold_accuracy(n=positive_count)
-            print(f"{acc_threshold=} (recall)")
+            print(f"{acc_threshold=} (accuracy of a random classifier threshold)")
             if acc <= acc_threshold:
                 degenerated = True
                 print("stop: classifier has degenerated")
@@ -207,6 +205,23 @@ class QuijoteAblationExperiment:
                     float(feature_scores[index]) if index < len(feature_scores) else np.nan
                     for index in to_delete
                 )
+                print("last removed features:")
+                for sequence_offset, feature_index in enumerate(to_delete, start=1):
+                    rank = delete_pointer + sequence_offset
+                    feature_name = (
+                        feature_names[feature_index]
+                        if feature_index < len(feature_names)
+                        else f"feature_{feature_index}"
+                    )
+                    feature_score = (
+                        float(feature_scores[feature_index])
+                        if feature_index < len(feature_scores)
+                        else np.nan
+                    )
+                    print(
+                        f"  rank={rank:>4} index={feature_index:>6} "
+                        f"score={feature_score:>9.4f} name={feature_name}"
+                    )
                 delete_pointer += remove_per_step
                 features_remaining -= remove_per_step
                 print("deleting candidates")
