@@ -106,7 +106,7 @@ def build_ablation_table(ablation_artifacts):
         "rank",
         "feature_index",
         "feature_name",
-        "posneg_information_gain",
+        "log_odds_z_score",
     ]
     ranking_positions = {
         feature_index: rank
@@ -123,7 +123,7 @@ def build_ablation_table(ablation_artifacts):
                 "rank": rank,
                 "feature_index": feature_index,
                 "feature_name": feature_name,
-                "posneg_information_gain": feature_score,
+                "log_odds_z_score": feature_score,
             }
         )
     return pd.DataFrame(rows, columns=columns)

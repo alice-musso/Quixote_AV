@@ -15,7 +15,6 @@ from sklearn.neighbors import NearestNeighbors
 from authorship_verification import AuthorshipVerification
 from data_preparation.data_loader import binarize_corpus, load_corpus
 from quijote_classifier.quijote_experiment import QuijoteAblationExperiment
-from quijote_classifier.supervised_term_weighting.tsr_functions import posneg_information_gain
 
 
 def parse_args():
@@ -132,15 +131,19 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         target_title=args.target_title,
         positive_author=args.positive_author,
     )
-    positive_author_books = ablation_experiment.cervantes_only(train_corpus)
-    topic_documents, y_quijote, _topic_groups, topic_metadata = build_topic_document_records(
-        positive_author_books,
+    topic_documents, topic_labels, author_labels, _topic_groups = ablation_experiment.corpus_labels(
+        train_corpus,
+    )
+    _, _, _, topic_metadata = build_topic_document_records(
+        ablation_experiment.cervantes_only(train_corpus),
         args.target_title,
     )
-    positive_author_train_matrix = verifier.transform_documents_with_selection(
+    full_corpus_matrix = verifier.transform_documents_with_selection(
         topic_documents,
         verifier_artifacts.feature_selection,
     )
+    positive_author_train_matrix = full_corpus_matrix[author_labels == 1]
+    y_quijote = topic_labels[author_labels == 1]
 
     if args.ablation_path:
         deleted_feature_table = load_deleted_feature_table(args.ablation_path)
@@ -157,10 +160,10 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         )
 
     feature_ranking_artifacts = ablation_experiment.compute_feature_ranking(
-        X=positive_author_train_matrix,
-        y=y_quijote,
+        X=full_corpus_matrix,
+        topic_labels=topic_labels,
+        author_labels=author_labels,
         random_state=args.random_state,
-        tsr_metric=posneg_information_gain,
     )
     classifier = verifier.new_classifier().set_params(
         C=verifier_artifacts.hyperparams["C"],
@@ -174,14 +177,14 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         y_test=feature_ranking_artifacts.y_test,
         classifier=classifier,
         feature_names=verifier_artifacts.feature_selection.selected_feature_names,
-        feature_scores=feature_ranking_artifacts.posneg_information_gain,
+        feature_scores=feature_ranking_artifacts.feature_scores,
     )
     deleted_feature_table = pd.DataFrame(
         {
             "deleted_order": np.arange(1, len(ablation_artifacts.deleted_features) + 1),
             "feature_index": ablation_artifacts.deleted_features,
             "feature_name": ablation_artifacts.deleted_feature_names,
-            "posneg_information_gain": ablation_artifacts.deleted_feature_scores,
+            "log_odds_z_score": ablation_artifacts.deleted_feature_scores,
         }
     )
     return (

@@ -8,10 +8,6 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 
 from data_preparation.data_loader import Book
-from quijote_classifier.supervised_term_weighting.tsr_functions import (
-    get_supervised_matrix,
-    get_tsr_matrix,
-)
 from scipy.stats import binom
 
 warnings.filterwarnings("ignore")
@@ -30,8 +26,7 @@ class TopicAblationArtifacts:
 @dataclass
 class TopicFeatureRankingArtifacts:
     feature_ranking: list[int]
-    tsr_matrix: np.ndarray
-    posneg_information_gain: np.ndarray
+    feature_scores: np.ndarray
     X_train: object
     X_test: object
     y_train: np.ndarray
@@ -64,25 +59,71 @@ class QuijoteAblationExperiment:
 
         return documents, np.asarray(labels), groups
 
-    def compute_feature_ranking(self, X, y, random_state=0, tsr_metric=None):
-        class_counts = np.bincount(y)
-        stratify = y if np.unique(y).size > 1 and min(class_counts) >= 2 else None
+    def corpus_labels(self, books: list[Book]):
+        documents = []
+        topic_labels = []
+        author_labels = []
+        groups = []
+
+        for group_id, book in enumerate(books):
+            topic_label = int(self.target_title.lower() in book.title.lower())
+            author_label = int(book.author == self.positive_author)
+            documents.append(book.processed)
+            topic_labels.append(topic_label)
+            author_labels.append(author_label)
+            groups.append(group_id)
+            if book.segmented is not None:
+                for fragment in book.segmented:
+                    documents.append(fragment)
+                    topic_labels.append(topic_label)
+                    author_labels.append(author_label)
+                    groups.append(group_id)
+
+        return (
+            documents,
+            np.asarray(topic_labels, dtype=int),
+            np.asarray(author_labels, dtype=int),
+            groups,
+        )
+
+    def compute_feature_ranking(self, X, topic_labels, author_labels, random_state=0):
+        topic_labels = np.asarray(topic_labels, dtype=int)
+        author_labels = np.asarray(author_labels, dtype=int)
+
+        cervantes_quijote = (author_labels == 1) & (topic_labels == 1)
+        cervantes_not_quijote = (author_labels == 1) & (topic_labels == 0)
+        not_cervantes = author_labels == 0
+
+        if not np.any(cervantes_quijote):
+            raise ValueError("Missing Cervantes & Quijote instances for topic ablation.")
+        if not np.any(cervantes_not_quijote):
+            raise ValueError("Missing Cervantes & NotQuijote instances for topic ablation.")
+        if not np.any(not_cervantes):
+            raise ValueError("Missing NotCervantes background instances for topic ablation.")
+
+        feature_scores = self._weighted_log_odds_with_background(
+            X[cervantes_quijote],
+            X[cervantes_not_quijote],
+            X[not_cervantes],
+        )
+        feature_ranking = np.argsort(feature_scores)[::-1]
+        feature_ranking = [index for index in feature_ranking if feature_scores[index] > 0]
+
+        cervantes_mask = author_labels == 1
+        X_cervantes = X[cervantes_mask]
+        y_cervantes = topic_labels[cervantes_mask]
+        class_counts = np.bincount(y_cervantes)
+        stratify = y_cervantes if np.unique(y_cervantes).size > 1 and min(class_counts) >= 2 else None
         X_train, X_test, y_train, y_test = train_test_split(
-            X,
-            y,
+            X_cervantes,
+            y_cervantes,
             test_size=0.3,
             random_state=random_state,
             stratify=stratify,
         )
-        label_matrix = np.asarray(y_train).reshape(-1, 1)
-        supervised_matrix = get_supervised_matrix(X_train, label_matrix, n_jobs=-1)
-        tsr_matrix = get_tsr_matrix(supervised_matrix, tsr_metric, n_jobs=-1).flatten()
-        feature_ranking = np.argsort(tsr_matrix)[::-1]
-        feature_ranking = [index for index in feature_ranking if tsr_matrix[index] > 0]
         return TopicFeatureRankingArtifacts(
             feature_ranking=feature_ranking,
-            tsr_matrix=tsr_matrix,
-            posneg_information_gain=tsr_matrix,
+            feature_scores=feature_scores,
             X_train=X_train,
             X_test=X_test,
             y_train=y_train,
@@ -182,6 +223,38 @@ class QuijoteAblationExperiment:
             deleted_feature_names=deleted_feature_names,
             deleted_feature_scores=deleted_feature_scores,
         )
+
+    def _weighted_log_odds_with_background(self, quijote_X, not_quijote_X, background_X):
+        quijote_counts = self._sum_feature_weights(quijote_X)
+        not_quijote_counts = self._sum_feature_weights(not_quijote_X)
+        background_counts = self._sum_feature_weights(background_X)
+
+        prior = np.asarray(background_counts, dtype=float)
+        if not np.any(prior > 0):
+            prior = np.ones_like(prior, dtype=float)
+
+        quijote_total = float(np.sum(quijote_counts))
+        not_quijote_total = float(np.sum(not_quijote_counts))
+        prior_total = float(np.sum(prior))
+
+        quijote_posterior = quijote_counts + prior
+        not_quijote_posterior = not_quijote_counts + prior
+
+        quijote_other = (quijote_total + prior_total) - quijote_posterior
+        not_quijote_other = (not_quijote_total + prior_total) - not_quijote_posterior
+
+        epsilon = np.finfo(float).eps
+        quijote_other = np.maximum(quijote_other, epsilon)
+        not_quijote_other = np.maximum(not_quijote_other, epsilon)
+
+        delta = np.log(quijote_posterior / quijote_other) - np.log(not_quijote_posterior / not_quijote_other)
+        variance = (1.0 / np.maximum(quijote_posterior, epsilon)) + (1.0 / np.maximum(not_quijote_posterior, epsilon))
+        return delta / np.sqrt(variance)
+
+    def _sum_feature_weights(self, X):
+        if sparse.issparse(X):
+            return np.asarray(X.sum(axis=0)).ravel().astype(float)
+        return np.asarray(X, dtype=float).sum(axis=0)
 
     def _zero_columns(self, X, column_indices):
         if sparse.issparse(X):

@@ -125,25 +125,21 @@ class QuixoteInferenceExperiment:
 
     def _compute_ablation(self, verifier, verifier_artifacts, train_corpus):
         from quijote_classifier.quijote_experiment import QuijoteAblationExperiment
-        from quijote_classifier.supervised_term_weighting.tsr_functions import (
-            posneg_information_gain,
-        )
 
         ablation_experiment = QuijoteAblationExperiment(
             target_title=self.config.target_title,
             positive_author=self.config.positive_author,
         )
-        positive_author_books = ablation_experiment.cervantes_only(train_corpus)
-        topic_documents, y_quijote, _topic_groups = ablation_experiment.topic_labels(positive_author_books)
-        positive_author_train_matrix = verifier.transform_documents_with_selection(
+        topic_documents, topic_labels, author_labels, _topic_groups = ablation_experiment.corpus_labels(train_corpus)
+        full_corpus_matrix = verifier.transform_documents_with_selection(
             topic_documents,
             verifier_artifacts.feature_selection,
         )
         feature_ranking_artifacts = ablation_experiment.compute_feature_ranking(
-            X=positive_author_train_matrix,
-            y=y_quijote,
+            X=full_corpus_matrix,
+            topic_labels=topic_labels,
+            author_labels=author_labels,
             random_state=self.config.random_state,
-            tsr_metric=posneg_information_gain,
         )
 
         classifier = verifier.new_classifier().set_params(
@@ -158,7 +154,7 @@ class QuixoteInferenceExperiment:
             y_test=feature_ranking_artifacts.y_test,
             classifier=classifier,
             feature_names=verifier_artifacts.feature_selection.selected_feature_names,
-            feature_scores=feature_ranking_artifacts.posneg_information_gain,
+            feature_scores=feature_ranking_artifacts.feature_scores,
         )
 
     def _apply_ablation_to_verifier_data(self, verifier_artifacts, ablation_artifacts):
