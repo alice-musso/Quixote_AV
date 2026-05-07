@@ -154,7 +154,9 @@ class QuixoteInferenceExperiment:
             y_test=feature_ranking_artifacts.y_test,
             classifier=classifier,
             feature_names=verifier_artifacts.feature_selection.selected_feature_names,
-            feature_scores=feature_ranking_artifacts.feature_scores,
+            cervantes_only_scores=feature_ranking_artifacts.cervantes_only_scores,
+            everything_else_scores=feature_ranking_artifacts.everything_else_scores,
+            combined_ranks=feature_ranking_artifacts.combined_ranks,
         )
 
     def _apply_ablation_to_verifier_data(self, verifier_artifacts, ablation_artifacts):

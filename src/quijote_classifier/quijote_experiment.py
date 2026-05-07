@@ -8,6 +8,11 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 
 from data_preparation.data_loader import Book
+from quijote_classifier.supervised_term_weighting.tsr_functions import (
+    get_supervised_matrix,
+    get_tsr_matrix,
+    posneg_information_gain,
+)
 from scipy.stats import binom
 
 warnings.filterwarnings("ignore")
@@ -17,16 +22,22 @@ warnings.filterwarnings("ignore")
 class TopicAblationArtifacts:
     feature_ranking: list[int]
     ranked_feature_names: list[str]
-    feature_scores: np.ndarray
+    cervantes_only_scores: np.ndarray
+    everything_else_scores: np.ndarray
+    combined_ranks: np.ndarray
     deleted_features: list[int]
     deleted_feature_names: list[str]
-    deleted_feature_scores: list[float]
+    deleted_feature_cervantes_only_scores: list[float]
+    deleted_feature_everything_else_scores: list[float]
+    deleted_feature_combined_ranks: list[int]
 
 
 @dataclass
 class TopicFeatureRankingArtifacts:
     feature_ranking: list[int]
-    feature_scores: np.ndarray
+    cervantes_only_scores: np.ndarray
+    everything_else_scores: np.ndarray
+    combined_ranks: np.ndarray
     X_train: object
     X_test: object
     y_train: np.ndarray
@@ -101,17 +112,26 @@ class QuijoteAblationExperiment:
         if not np.any(not_cervantes):
             raise ValueError("Missing NotCervantes background instances for topic ablation.")
 
-        feature_scores = self._weighted_log_odds_with_background(
-            X[cervantes_quijote],
-            X[cervantes_not_quijote],
-            X[not_cervantes],
-        )
-        feature_ranking = np.argsort(feature_scores)[::-1]
-        feature_ranking = [index for index in feature_ranking if feature_scores[index] > 0]
-
         cervantes_mask = author_labels == 1
         X_cervantes = X[cervantes_mask]
         y_cervantes = topic_labels[cervantes_mask]
+        cervantes_only_scores = self._information_gain_scores(
+            X_cervantes,
+            y_cervantes,
+        )
+
+        y_everything_else = cervantes_quijote.astype(int)
+        everything_else_scores = self._information_gain_scores(
+            X,
+            y_everything_else,
+        )
+
+        cervantes_only_ranks = self._rank_positions_desc(cervantes_only_scores)
+        everything_else_ranks = self._rank_positions_desc(everything_else_scores)
+        combined_ranks = np.maximum(cervantes_only_ranks, everything_else_ranks)
+        tie_breaker = np.minimum(cervantes_only_ranks, everything_else_ranks)
+        feature_ranking = np.lexsort((tie_breaker, combined_ranks)).tolist()
+
         class_counts = np.bincount(y_cervantes)
         stratify = y_cervantes if np.unique(y_cervantes).size > 1 and min(class_counts) >= 2 else None
         X_train, X_test, y_train, y_test = train_test_split(
@@ -123,7 +143,9 @@ class QuijoteAblationExperiment:
         )
         return TopicFeatureRankingArtifacts(
             feature_ranking=feature_ranking,
-            feature_scores=feature_scores,
+            cervantes_only_scores=cervantes_only_scores,
+            everything_else_scores=everything_else_scores,
+            combined_ranks=combined_ranks,
             X_train=X_train,
             X_test=X_test,
             y_train=y_train,
@@ -139,7 +161,9 @@ class QuijoteAblationExperiment:
         y_test,
         classifier: BaseEstimator,
         feature_names=None,
-        feature_scores=None,
+        cervantes_only_scores=None,
+        everything_else_scores=None,
+        combined_ranks=None,
     ):
         if np.unique(y_train).size < 2:
             raise ValueError("Ablation training split must contain both topic classes.")
@@ -148,14 +172,18 @@ class QuijoteAblationExperiment:
         remove_per_step = 10
         delete_pointer = 0
         deleted_features = []
-        feature_scores = np.asarray(feature_scores if feature_scores is not None else [])
+        cervantes_only_scores = np.asarray(cervantes_only_scores if cervantes_only_scores is not None else [])
+        everything_else_scores = np.asarray(everything_else_scores if everything_else_scores is not None else [])
+        combined_ranks = np.asarray(combined_ranks if combined_ranks is not None else [])
         feature_names = list(feature_names or [])
         ranked_feature_names = [
             feature_names[index] if index < len(feature_names) else f"feature_{index}"
             for index in feature_ranking
         ]
         deleted_feature_names = []
-        deleted_feature_scores = []
+        deleted_feature_cervantes_only_scores = []
+        deleted_feature_everything_else_scores = []
+        deleted_feature_combined_ranks = []
 
         print(f'prevalence Quijote"s: {np.mean(y_train) * 100:.3f}%')
         X_train = X_train.copy()
@@ -201,8 +229,16 @@ class QuijoteAblationExperiment:
                     feature_names[index] if index < len(feature_names) else f"feature_{index}"
                     for index in to_delete
                 )
-                deleted_feature_scores.extend(
-                    float(feature_scores[index]) if index < len(feature_scores) else np.nan
+                deleted_feature_cervantes_only_scores.extend(
+                    float(cervantes_only_scores[index]) if index < len(cervantes_only_scores) else np.nan
+                    for index in to_delete
+                )
+                deleted_feature_everything_else_scores.extend(
+                    float(everything_else_scores[index]) if index < len(everything_else_scores) else np.nan
+                    for index in to_delete
+                )
+                deleted_feature_combined_ranks.extend(
+                    int(combined_ranks[index]) if index < len(combined_ranks) else -1
                     for index in to_delete
                 )
                 print("last removed features:")
@@ -213,14 +249,25 @@ class QuijoteAblationExperiment:
                         if feature_index < len(feature_names)
                         else f"feature_{feature_index}"
                     )
-                    feature_score = (
-                        float(feature_scores[feature_index])
-                        if feature_index < len(feature_scores)
+                    cervantes_only_score = (
+                        float(cervantes_only_scores[feature_index])
+                        if feature_index < len(cervantes_only_scores)
                         else np.nan
                     )
+                    everything_else_score = (
+                        float(everything_else_scores[feature_index])
+                        if feature_index < len(everything_else_scores)
+                        else np.nan
+                    )
+                    combined_rank = (
+                        int(combined_ranks[feature_index])
+                        if feature_index < len(combined_ranks)
+                        else -1
+                    )
                     print(
-                        f"  rank={rank:>4} index={feature_index:>6} "
-                        f"score={feature_score:>9.4f} name={feature_name}"
+                        f"  rank={rank:>4} max_rank={combined_rank:>4} "
+                        f"index={feature_index:>6} ig_cq_vs_cnq={cervantes_only_score:>9.4f} "
+                        f"ig_cq_vs_all={everything_else_score:>9.4f} name={feature_name}"
                     )
                 delete_pointer += remove_per_step
                 features_remaining -= remove_per_step
@@ -233,52 +280,27 @@ class QuijoteAblationExperiment:
         return TopicAblationArtifacts(
             feature_ranking=feature_ranking,
             ranked_feature_names=ranked_feature_names,
-            feature_scores=feature_scores,
+            cervantes_only_scores=cervantes_only_scores,
+            everything_else_scores=everything_else_scores,
+            combined_ranks=combined_ranks,
             deleted_features=deleted_features,
             deleted_feature_names=deleted_feature_names,
-            deleted_feature_scores=deleted_feature_scores,
+            deleted_feature_cervantes_only_scores=deleted_feature_cervantes_only_scores,
+            deleted_feature_everything_else_scores=deleted_feature_everything_else_scores,
+            deleted_feature_combined_ranks=deleted_feature_combined_ranks,
         )
 
-    def _weighted_log_odds_with_background(self, quijote_X, not_quijote_X, background_X, prior_floor=0.01):
-        """Rank features with weighted log-odds and a strictly positive prior.
+    def _information_gain_scores(self, X, y):
+        label_matrix = np.asarray(y, dtype=int).reshape(-1, 1)
+        supervised_matrix = get_supervised_matrix(X, label_matrix, n_jobs=-1)
+        return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=-1).flatten()
 
-        The background corpus is used as an informative Dirichlet prior. Some
-        selected features can be absent from that background, though; without a
-        small floor, those zero-prior features can still lead to log(0).
-        """
-        quijote_counts = self._sum_feature_weights(quijote_X)
-        not_quijote_counts = self._sum_feature_weights(not_quijote_X)
-        background_counts = self._sum_feature_weights(background_X)
-
-        prior = np.asarray(background_counts, dtype=float) + prior_floor
-        if not np.any(prior > 0):
-            prior = np.ones_like(prior, dtype=float) * prior_floor
-
-        quijote_total = float(np.sum(quijote_counts))
-        not_quijote_total = float(np.sum(not_quijote_counts))
-        prior_total = float(np.sum(prior))
-
-        quijote_posterior = quijote_counts + prior
-        not_quijote_posterior = not_quijote_counts + prior
-
-        quijote_other = (quijote_total + prior_total) - quijote_posterior
-        not_quijote_other = (not_quijote_total + prior_total) - not_quijote_posterior
-
-        epsilon = np.finfo(float).eps
-        quijote_other = np.maximum(quijote_other, epsilon)
-        not_quijote_other = np.maximum(not_quijote_other, epsilon)
-
-        quijote_posterior = np.maximum(quijote_posterior, epsilon)
-        not_quijote_posterior = np.maximum(not_quijote_posterior, epsilon)
-
-        delta = np.log(quijote_posterior / quijote_other) - np.log(not_quijote_posterior / not_quijote_other)
-        variance = (1.0 / quijote_posterior) + (1.0 / not_quijote_posterior)
-        return delta / np.sqrt(variance)
-
-    def _sum_feature_weights(self, X):
-        if sparse.issparse(X):
-            return np.asarray(X.sum(axis=0)).ravel().astype(float)
-        return np.asarray(X, dtype=float).sum(axis=0)
+    def _rank_positions_desc(self, scores):
+        scores = np.asarray(scores, dtype=float)
+        ranking = np.argsort(scores, kind="stable")[::-1]
+        positions = np.empty_like(ranking)
+        positions[ranking] = np.arange(1, len(scores) + 1)
+        return positions
 
     def _zero_columns(self, X, column_indices):
         if sparse.issparse(X):

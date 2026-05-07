@@ -177,14 +177,22 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
         y_test=feature_ranking_artifacts.y_test,
         classifier=classifier,
         feature_names=verifier_artifacts.feature_selection.selected_feature_names,
-        feature_scores=feature_ranking_artifacts.feature_scores,
+        cervantes_only_scores=feature_ranking_artifacts.cervantes_only_scores,
+        everything_else_scores=feature_ranking_artifacts.everything_else_scores,
+        combined_ranks=feature_ranking_artifacts.combined_ranks,
     )
     deleted_feature_table = pd.DataFrame(
         {
             "deleted_order": np.arange(1, len(ablation_artifacts.deleted_features) + 1),
+            "combined_rank": ablation_artifacts.deleted_feature_combined_ranks,
             "feature_index": ablation_artifacts.deleted_features,
             "feature_name": ablation_artifacts.deleted_feature_names,
-            "log_odds_z_score": ablation_artifacts.deleted_feature_scores,
+            "ig_cervantes_quijote_vs_cervantes_notquijote": (
+                ablation_artifacts.deleted_feature_cervantes_only_scores
+            ),
+            "ig_cervantes_quijote_vs_everything_else": (
+                ablation_artifacts.deleted_feature_everything_else_scores
+            ),
         }
     )
     return (

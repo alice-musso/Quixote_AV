@@ -104,9 +104,11 @@ def build_ablation_table(ablation_artifacts):
     columns = [
         "deleted_order",
         "rank",
+        "combined_rank",
         "feature_index",
         "feature_name",
-        "log_odds_z_score",
+        "ig_cervantes_quijote_vs_cervantes_notquijote",
+        "ig_cervantes_quijote_vs_everything_else",
     ]
     ranking_positions = {
         feature_index: rank
@@ -116,14 +118,18 @@ def build_ablation_table(ablation_artifacts):
     for deleted_order, feature_index in enumerate(ablation_artifacts.deleted_features, start=1):
         rank = ranking_positions.get(feature_index)
         feature_name = ablation_artifacts.deleted_feature_names[deleted_order - 1]
-        feature_score = ablation_artifacts.deleted_feature_scores[deleted_order - 1]
+        cervantes_only_score = ablation_artifacts.deleted_feature_cervantes_only_scores[deleted_order - 1]
+        everything_else_score = ablation_artifacts.deleted_feature_everything_else_scores[deleted_order - 1]
+        combined_rank = ablation_artifacts.deleted_feature_combined_ranks[deleted_order - 1]
         rows.append(
             {
                 "deleted_order": deleted_order,
                 "rank": rank,
+                "combined_rank": combined_rank,
                 "feature_index": feature_index,
                 "feature_name": feature_name,
-                "log_odds_z_score": feature_score,
+                "ig_cervantes_quijote_vs_cervantes_notquijote": cervantes_only_score,
+                "ig_cervantes_quijote_vs_everything_else": everything_else_score,
             }
         )
     return pd.DataFrame(rows, columns=columns)
