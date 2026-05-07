@@ -12,6 +12,7 @@ class ModelConfig:
     results_inference: str
     hyperparams_save: str
     classifier_type: str
+    ablation_ranking_mode: str
     load_hyperparams: bool
     skip_ablation: bool = False
     skip_decision_changes: bool = True
@@ -36,6 +37,15 @@ class ModelConfig:
             default="../hyperparams/hyperparameters.pkl",
         )
         parser.add_argument("--classifier-type", choices=["lr", "svm"], default="lr")
+        parser.add_argument(
+            "--ablation-ranking-mode",
+            choices=["combined", "cervantes_only"],
+            default="combined",
+            help=(
+                "Use the merged two-rank criterion (`combined`) or only the "
+                "CervantesQuijote vs CervantesNotQuijote ranking (`cervantes_only`)."
+            ),
+        )
         parser.add_argument(
             "--load-hyperparams",
             action=argparse.BooleanOptionalAction,
@@ -78,6 +88,7 @@ class ModelConfig:
             results_inference=results_inference,
             hyperparams_save=hyperparams_save,
             classifier_type=classifier_type,
+            ablation_ranking_mode=args.ablation_ranking_mode,
             load_hyperparams=args.load_hyperparams,
             skip_ablation=args.skip_ablation,
             skip_decision_changes=args.skip_decision_changes,

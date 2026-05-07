@@ -97,7 +97,14 @@ class QuijoteAblationExperiment:
             groups,
         )
 
-    def compute_feature_ranking(self, X, topic_labels, author_labels, random_state=0):
+    def compute_feature_ranking(
+        self,
+        X,
+        topic_labels,
+        author_labels,
+        random_state=0,
+        ranking_mode="combined",
+    ):
         topic_labels = np.asarray(topic_labels, dtype=int)
         author_labels = np.asarray(author_labels, dtype=int)
 
@@ -130,7 +137,20 @@ class QuijoteAblationExperiment:
         everything_else_ranks = self._rank_positions_desc(everything_else_scores)
         combined_ranks = np.maximum(cervantes_only_ranks, everything_else_ranks)
         tie_breaker = np.minimum(cervantes_only_ranks, everything_else_ranks)
-        feature_ranking = np.lexsort((tie_breaker, combined_ranks)).tolist()
+        if ranking_mode == "combined":
+            candidate_mask = (cervantes_only_scores > 0) & (everything_else_scores > 0)
+            ranking_order = np.lexsort((tie_breaker, combined_ranks))
+        elif ranking_mode == "cervantes_only":
+            candidate_mask = cervantes_only_scores > 0
+            ranking_order = np.argsort(cervantes_only_ranks, kind="stable")
+        else:
+            raise ValueError(f"Unsupported ranking_mode: {ranking_mode}")
+
+        feature_ranking = [
+            int(index)
+            for index in ranking_order
+            if candidate_mask[index]
+        ]
 
         class_counts = np.bincount(y_cervantes)
         stratify = y_cervantes if np.unique(y_cervantes).size > 1 and min(class_counts) >= 2 else None
@@ -186,6 +206,7 @@ class QuijoteAblationExperiment:
         deleted_feature_combined_ranks = []
 
         print(f'prevalence Quijote"s: {np.mean(y_train) * 100:.3f}%')
+        print(f"positive candidate features available: {len(feature_ranking)}")
         X_train = X_train.copy()
         X_test = X_test.copy()
 
@@ -198,6 +219,22 @@ class QuijoteAblationExperiment:
             return int(k_star), k_star / n
 
         _, acc_threshold = threshold_accuracy(n=len(y_test))
+
+        if not feature_ranking:
+            print("stop: no positive candidates to remove")
+            print(f"X ablated has shape {X_train.shape}")
+            return TopicAblationArtifacts(
+                feature_ranking=feature_ranking,
+                ranked_feature_names=ranked_feature_names,
+                cervantes_only_scores=cervantes_only_scores,
+                everything_else_scores=everything_else_scores,
+                combined_ranks=combined_ranks,
+                deleted_features=deleted_features,
+                deleted_feature_names=deleted_feature_names,
+                deleted_feature_cervantes_only_scores=deleted_feature_cervantes_only_scores,
+                deleted_feature_everything_else_scores=deleted_feature_everything_else_scores,
+                deleted_feature_combined_ranks=deleted_feature_combined_ranks,
+            )
 
         while has_candidates and not degenerated:
             estimator = clone(classifier)
@@ -274,7 +311,7 @@ class QuijoteAblationExperiment:
                 print("deleting candidates")
             else:
                 has_candidates = False
-                print("stop: no more candidates to remove")
+                print("stop: no more positive candidates to remove")
 
         print(f"X ablated has shape {X_train.shape}")
         return TopicAblationArtifacts(

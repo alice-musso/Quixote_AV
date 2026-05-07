@@ -140,6 +140,7 @@ class QuixoteInferenceExperiment:
             topic_labels=topic_labels,
             author_labels=author_labels,
             random_state=self.config.random_state,
+            ranking_mode=self.config.ablation_ranking_mode,
         )
 
         classifier = verifier.new_classifier().set_params(
