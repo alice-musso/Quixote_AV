@@ -239,14 +239,20 @@ class QuijoteAblationExperiment:
             deleted_feature_scores=deleted_feature_scores,
         )
 
-    def _weighted_log_odds_with_background(self, quijote_X, not_quijote_X, background_X):
+    def _weighted_log_odds_with_background(self, quijote_X, not_quijote_X, background_X, prior_floor=0.01):
+        """Rank features with weighted log-odds and a strictly positive prior.
+
+        The background corpus is used as an informative Dirichlet prior. Some
+        selected features can be absent from that background, though; without a
+        small floor, those zero-prior features can still lead to log(0).
+        """
         quijote_counts = self._sum_feature_weights(quijote_X)
         not_quijote_counts = self._sum_feature_weights(not_quijote_X)
         background_counts = self._sum_feature_weights(background_X)
 
-        prior = np.asarray(background_counts, dtype=float)
+        prior = np.asarray(background_counts, dtype=float) + prior_floor
         if not np.any(prior > 0):
-            prior = np.ones_like(prior, dtype=float)
+            prior = np.ones_like(prior, dtype=float) * prior_floor
 
         quijote_total = float(np.sum(quijote_counts))
         not_quijote_total = float(np.sum(not_quijote_counts))
@@ -262,8 +268,11 @@ class QuijoteAblationExperiment:
         quijote_other = np.maximum(quijote_other, epsilon)
         not_quijote_other = np.maximum(not_quijote_other, epsilon)
 
+        quijote_posterior = np.maximum(quijote_posterior, epsilon)
+        not_quijote_posterior = np.maximum(not_quijote_posterior, epsilon)
+
         delta = np.log(quijote_posterior / quijote_other) - np.log(not_quijote_posterior / not_quijote_other)
-        variance = (1.0 / np.maximum(quijote_posterior, epsilon)) + (1.0 / np.maximum(not_quijote_posterior, epsilon))
+        variance = (1.0 / quijote_posterior) + (1.0 / not_quijote_posterior)
         return delta / np.sqrt(variance)
 
     def _sum_feature_weights(self, X):

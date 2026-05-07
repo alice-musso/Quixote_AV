@@ -176,7 +176,7 @@ class AuthorshipVerification:
 
     def new_classifier(self):
         classifier_type = getattr(self.config, "classifier_type", "lr")
-        print(f"Building classifier: {classifier_type}\n")
+        #print(f"Building classifier: {classifier_type}\n")
 
         if classifier_type == "lr":
             return LogisticRegression(
