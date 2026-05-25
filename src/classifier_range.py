@@ -100,6 +100,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         words_by_doc=1000,
         test_samples=100,
         calibrate=False,
+        n_jobs=1,
     ):
         self.base_cls = base_cls
         self.positive = positive
@@ -119,6 +120,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
         self.words_by_doc = words_by_doc
         self.test_samples = test_samples
         self.calibrate = calibrate
+        self.n_jobs = n_jobs
 
     def _selected_feature_blocks(self):
         return SelectedFeatureBlocks.from_estimator(self)
@@ -167,7 +169,7 @@ class ClassifierRange(ClassifierMixin, BaseEstimator):
                 estimator,
                 cv=10,
                 method="sigmoid",
-                n_jobs=-1,
+                n_jobs=self.n_jobs,
             )
         return estimator
 

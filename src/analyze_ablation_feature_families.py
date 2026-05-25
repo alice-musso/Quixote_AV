@@ -59,7 +59,7 @@ def parse_args():
             "model selection and save the selected hyperparameters."
         ),
     )
-    parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--random-state", type=int, default=0)
     parser.add_argument("--max-features", type=int, default=5000)
     parser.add_argument(
@@ -156,6 +156,7 @@ def recompute_family_sizes(args):
         load_corpus(
             args.train_dir,
             cache_path=str(PROJECT_ROOT / "src" / "data_preparation" / ".cache"),
+            n_jobs=args.n_jobs,
         ),
         positive_author=args.positive_author,
     )

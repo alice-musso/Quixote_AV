@@ -186,7 +186,7 @@ def category_tables(feature_sets, category_sets, c, nD, nF):
 Computes the nC x nF supervised matrix M where Mcf is the 4-cell contingency table for feature f and class c.
 Efficiency O(nF x nC x log(S)) where S is the sparse factor
 """
-def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=-1):
+def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=1):
     nD, nF = coocurrence_matrix.shape
     nD2, nC = label_matrix.shape
 
@@ -211,7 +211,7 @@ def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=-1):
 
 
 # obtains the matrix T where Tcf=tsr(f,c) is the tsr score for category c and feature f
-def get_tsr_matrix(cell_matrix, tsr_score_function, n_jobs=-1):
+def get_tsr_matrix(cell_matrix, tsr_score_function, n_jobs=1):
     nC = len(cell_matrix)
     nF = len(cell_matrix[0])
     tsr_matrix = Parallel(n_jobs=n_jobs, backend="threading")(

@@ -45,9 +45,10 @@ class TopicFeatureRankingArtifacts:
 
 
 class QuijoteAblationExperiment:
-    def __init__(self, target_title="Quijote", positive_author="Cervantes"):
+    def __init__(self, target_title="Quijote", positive_author="Cervantes", n_jobs=1):
         self.target_title = target_title
         self.positive_author = positive_author
+        self.n_jobs = n_jobs
 
     def cervantes_only(self, books: list[Book]):
         return [book for book in books if book.author == self.positive_author]
@@ -329,8 +330,8 @@ class QuijoteAblationExperiment:
 
     def _information_gain_scores(self, X, y):
         label_matrix = np.asarray(y, dtype=int).reshape(-1, 1)
-        supervised_matrix = get_supervised_matrix(X, label_matrix, n_jobs=-1)
-        return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=-1).flatten()
+        supervised_matrix = get_supervised_matrix(X, label_matrix, n_jobs=self.n_jobs)
+        return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=self.n_jobs).flatten()
 
     def _rank_positions_desc(self, scores):
         scores = np.asarray(scores, dtype=float)

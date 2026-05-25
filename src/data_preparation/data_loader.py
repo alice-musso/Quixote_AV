@@ -117,12 +117,18 @@ def _job_open_book(file, cache_path='./data_preparation/.cache'):
     return book
 
 
-def load_corpus(path: str, cache_path='./data_preparation/.cache'):
+def _resolve_max_workers(n_jobs):
+    if n_jobs == -1:
+        return multiprocessing.cpu_count()
+    return max(1, int(n_jobs))
+
+
+def load_corpus(path: str, cache_path='./data_preparation/.cache', n_jobs=1):
 
     multiprocessing.set_start_method("spawn", force=True)
 
     paths = Path(path).glob('*.txt')
-    with ProcessPoolExecutor(max_workers=16) as executor:
+    with ProcessPoolExecutor(max_workers=_resolve_max_workers(n_jobs)) as executor:
         futures = {executor.submit(_job_open_book, p, cache_path): p for p in paths}
         corpus = []
         for future in as_completed(futures):
@@ -141,7 +147,6 @@ def binarize_corpus(corpus: List[Book], positive_author='Cervantes'):
         if book.author != positive_author:
             book.author = 'Not' + positive_author
     return corpus
-
 
 
 

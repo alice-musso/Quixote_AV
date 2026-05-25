@@ -16,7 +16,7 @@ class ModelConfig:
     load_hyperparams: bool
     skip_ablation: bool = False
     skip_decision_changes: bool = True
-    n_jobs: int = -1
+    n_jobs: int = 64
     random_state: int = 0
     max_features: int = 5000
 
@@ -38,9 +38,15 @@ class ModelConfig:
         )
         parser.add_argument("--classifier-type", choices=["lr", "svm"], default="lr")
         parser.add_argument(
+            "--n-jobs",
+            type=int,
+            default=64,
+            help="Number of parallel workers to use. Keep this low on shared servers.",
+        )
+        parser.add_argument(
             "--ablation-ranking-mode",
             choices=["combined", "cervantes_only"],
-            default="combined",
+            default="cervantes_only",
             help=(
                 "Use the merged two-rank criterion (`combined`) or only the "
                 "CervantesQuijote vs CervantesNotQuijote ranking (`cervantes_only`)."
@@ -55,7 +61,7 @@ class ModelConfig:
         parser.add_argument(
             "--skip-ablation",
             action=argparse.BooleanOptionalAction,
-            default=False,
+            default=True,
             help="Skip the topic-ablation step; use --no-skip-ablation to re-enable it.",
         )
         parser.add_argument(
@@ -92,6 +98,7 @@ class ModelConfig:
             load_hyperparams=args.load_hyperparams,
             skip_ablation=args.skip_ablation,
             skip_decision_changes=args.skip_decision_changes,
+            n_jobs=args.n_jobs,
         )
         config.ensure_output_dirs()
         return config

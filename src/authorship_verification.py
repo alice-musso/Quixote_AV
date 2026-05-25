@@ -1,18 +1,21 @@
 import os
 import pickle
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+import joblib
 import numpy as np
 import scipy
 from scipy import sparse
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, make_scorer
-from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, cross_val_predict, cross_val_score
+from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, ParameterGrid, cross_val_predict, cross_val_score
 from sklearn.svm import LinearSVC
+from tqdm.auto import tqdm
 
 from classifier_range import ClassifierRange
 from data_preparation.data_loader import Book, get_spanish_function_words
@@ -31,6 +34,24 @@ from feature_extraction.features import (
 )
 
 warnings.filterwarnings("ignore")
+
+
+@contextmanager
+def tqdm_joblib(tqdm_object):
+    """Show tqdm progress for sklearn/joblib parallel tasks."""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_callback
+        tqdm_object.close()
 
 
 def get_full_books(y, y_pred, groups):
@@ -191,6 +212,7 @@ class AuthorshipVerification:
         return ClassifierRange(
             base_cls=self.new_classifier(),
             positive=self.config.positive_author,
+            n_jobs=self.config.n_jobs,
         )
 
     def _resolve_feature_slices(self, hyperparams, slices):
@@ -266,33 +288,43 @@ class AuthorshipVerification:
 
         if hyperparams is None:
             cls_range = self.prepare_range_classifier()
+            param_grid = {
+                "C": np.logspace(-4, 4, 9),
+                "class_weight": [None, "balanced"],
+                "feat_funct_words": [slices["feat_funct_words"], None],
+                "feat_post": [slices["feat_post"], None],
+                "feat_mendenhall": [slices["feat_mendenhall"], None],
+                "feat_sentlength": [slices["feat_sentlength"], None],
+                "feat_dvex": [slices["feat_dvex"], None],
+                "feat_punct": [slices["feat_punct"], None],
+                "feat_dep": [slices["feat_dep"], None],
+                "feat_char": [slices["feat_char"], None],
+                "feat_k_freq_words": [slices["feat_k_freq_words"], None],
+                "rebalance_ratio": [None, 0.5],
+            }
+            cv = LeaveOneGroupOut()
+            total_fits = len(ParameterGrid(param_grid)) * cv.get_n_splits(X, y, groups)
             selector = GridSearchCV(
                 estimator=cls_range,
-                param_grid={
-                    "C": np.logspace(-4, 4, 9),
-                    "class_weight": [None, "balanced"],
-                    "feat_funct_words": [slices["feat_funct_words"], None],
-                    "feat_post": [slices["feat_post"], None],
-                    "feat_mendenhall": [slices["feat_mendenhall"], None],
-                    "feat_sentlength": [slices["feat_sentlength"], None],
-                    "feat_dvex": [slices["feat_dvex"], None],
-                    "feat_punct": [slices["feat_punct"], None],
-                    "feat_dep": [slices["feat_dep"], None],
-                    "feat_char": [slices["feat_char"], None],
-                    "feat_k_freq_words": [slices["feat_k_freq_words"], None],
-                    "rebalance_ratio": [None, 0.5],
-                },
-                cv=LeaveOneGroupOut(),
+                param_grid=param_grid,
+                cv=cv,
                 refit=False,
-                verbose=1,
+                verbose=0,
                 scoring=make_scorer(
                     f1_score,
                     pos_label=self.config.positive_author,
                     zero_division=1.0,
                 ),
-                n_jobs=-1,
+                n_jobs=self.config.n_jobs,
             )
-            selector.fit(X, y, groups=groups)
+            with tqdm_joblib(
+                tqdm(
+                    total=total_fits,
+                    desc="Model selection",
+                    unit="fit",
+                )
+            ):
+                selector.fit(X, y, groups=groups)
             resolved_hyperparams = selector.best_params_
             self.best_score = float(selector.best_score_)
             self._save_hyperparams(resolved_hyperparams, save_hyper_path)
@@ -304,19 +336,28 @@ class AuthorshipVerification:
                 feature_names_by_block,
             )
             X_selected_for_scoring = feature_selection.apply(X)
-            cv_scores = cross_val_score(
-                estimator=clone(cls_range).set_params(**feature_selection.normalized_hyperparams),
-                X=X_selected_for_scoring,
-                y=y,
-                groups=groups,
-                cv=LeaveOneGroupOut(),
-                scoring=make_scorer(
-                    f1_score,
-                    pos_label=self.config.positive_author,
-                    zero_division=1.0,
-                ),
-                n_jobs=-1,
-            )
+            cv = LeaveOneGroupOut()
+            total_fits = cv.get_n_splits(X_selected_for_scoring, y, groups)
+            with tqdm_joblib(
+                tqdm(
+                    total=total_fits,
+                    desc="Scoring saved hyperparams",
+                    unit="fold",
+                )
+            ):
+                cv_scores = cross_val_score(
+                    estimator=clone(cls_range).set_params(**feature_selection.normalized_hyperparams),
+                    X=X_selected_for_scoring,
+                    y=y,
+                    groups=groups,
+                    cv=cv,
+                    scoring=make_scorer(
+                        f1_score,
+                        pos_label=self.config.positive_author,
+                        zero_division=1.0,
+                    ),
+                    n_jobs=self.config.n_jobs,
+                )
             self.best_score = float(np.mean(cv_scores))
 
         self.best_params = resolved_hyperparams

@@ -43,7 +43,7 @@ def parse_args():
         default=True,
         help="Load saved hyperparameters; use --no-load-hyperparams to recompute them.",
     )
-    parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--random-state", type=int, default=0)
     parser.add_argument("--max-features", type=int, default=5000)
     return parser.parse_args()
@@ -130,6 +130,7 @@ def compute_ablation_if_needed(args, verifier, verifier_artifacts, train_corpus)
     ablation_experiment = QuijoteAblationExperiment(
         target_title=args.target_title,
         positive_author=args.positive_author,
+        n_jobs=args.n_jobs,
     )
     topic_documents, topic_labels, author_labels, _topic_groups = ablation_experiment.corpus_labels(
         train_corpus,
@@ -504,7 +505,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     verifier = AuthorshipVerification(build_verifier_config(args))
-    train_corpus = binarize_corpus(load_corpus(args.train_dir), positive_author=args.positive_author)
+    train_corpus = binarize_corpus(
+        load_corpus(args.train_dir, n_jobs=args.n_jobs),
+        positive_author=args.positive_author,
+    )
 
     hyperparams_path = resolve_hyperparams_path(args)
     hyperparams = None

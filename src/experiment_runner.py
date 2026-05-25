@@ -95,11 +95,11 @@ class QuixoteInferenceExperiment:
         from data_preparation.data_loader import binarize_corpus, load_corpus
 
         train_corpus = binarize_corpus(
-            load_corpus(self.config.train_dir),
+            load_corpus(self.config.train_dir, n_jobs=self.config.n_jobs),
             positive_author=self.config.positive_author,
         )
         test_corpus = binarize_corpus(
-            load_corpus(self.config.test_dir),
+            load_corpus(self.config.test_dir, n_jobs=self.config.n_jobs),
             positive_author=self.config.positive_author,
         )
         return LoadedCorpora(train_corpus=train_corpus, test_corpus=test_corpus)
@@ -129,6 +129,7 @@ class QuixoteInferenceExperiment:
         ablation_experiment = QuijoteAblationExperiment(
             target_title=self.config.target_title,
             positive_author=self.config.positive_author,
+            n_jobs=self.config.n_jobs,
         )
         topic_documents, topic_labels, author_labels, _topic_groups = ablation_experiment.corpus_labels(train_corpus)
         full_corpus_matrix = verifier.transform_documents_with_selection(

@@ -50,7 +50,8 @@ python -m inference \
   --train-dir ../corpus/training \
   --test-dir ../corpus/test \
   --positive-author Cervantes \
-  --classifier-type lr
+  --classifier-type lr \
+  --n-jobs 1
 ```
 
 Use `--no-load-hyperparams` to rerun model selection instead of loading a saved hyperparameter file.

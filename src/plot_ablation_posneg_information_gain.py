@@ -47,7 +47,7 @@ def parse_args():
         default=True,
         help="Use --no-load-hyperparams to rerun model selection.",
     )
-    parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument("--random-state", type=int, default=0)
     parser.add_argument("--max-features", type=int, default=5000)
     return parser.parse_args()
@@ -114,6 +114,7 @@ def prepare_topic_matrix(args):
         load_corpus(
             args.train_dir,
             cache_path=str(PROJECT_ROOT / "src" / "data_preparation" / ".cache"),
+            n_jobs=args.n_jobs,
         ),
         positive_author=args.positive_author,
     )
@@ -128,6 +129,7 @@ def prepare_topic_matrix(args):
     ablation_experiment = QuijoteAblationExperiment(
         target_title=args.target_title,
         positive_author=args.positive_author,
+        n_jobs=args.n_jobs,
     )
     positive_author_books = ablation_experiment.cervantes_only(train_corpus)
     topic_documents, y_quijote, _topic_groups = ablation_experiment.topic_labels(
@@ -140,7 +142,7 @@ def prepare_topic_matrix(args):
     return topic_matrix, y_quijote
 
 
-def compute_deleted_posneg_information_gain(topic_matrix, y_quijote, deleted_feature_indices):
+def compute_deleted_posneg_information_gain(topic_matrix, y_quijote, deleted_feature_indices, n_jobs=1):
     from quijote_classifier.supervised_term_weighting.tsr_functions import (
         get_supervised_matrix,
         get_tsr_matrix,
@@ -149,8 +151,8 @@ def compute_deleted_posneg_information_gain(topic_matrix, y_quijote, deleted_fea
 
     deleted_matrix = topic_matrix[:, deleted_feature_indices]
     label_matrix = np.asarray(y_quijote).reshape(-1, 1)
-    supervised_matrix = get_supervised_matrix(deleted_matrix, label_matrix, n_jobs=-1)
-    return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=-1).flatten()
+    supervised_matrix = get_supervised_matrix(deleted_matrix, label_matrix, n_jobs=n_jobs)
+    return get_tsr_matrix(supervised_matrix, posneg_information_gain, n_jobs=n_jobs).flatten()
 
 
 def build_posneg_table(ablation_table, posneg_information_gain_values=None):
@@ -443,6 +445,7 @@ def main():
             topic_matrix,
             y_quijote,
             deleted_feature_indices,
+            n_jobs=args.n_jobs,
         )
         posneg_table = build_posneg_table(ablation_table, posneg_information_gain_values)
 

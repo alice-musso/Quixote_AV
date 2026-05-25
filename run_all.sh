@@ -7,6 +7,7 @@ BASE_DIR=$(cd "$BASE_DIR" && pwd)
 
 TRAIN_DIR="$BASE_DIR/corpus/training"
 TEST_DIR="$BASE_DIR/corpus/test"
+N_JOBS="${N_JOBS:-1}"
 
 MODEL_TYPE=(
 #"svm"
@@ -41,6 +42,7 @@ for AUTHOR in "${AUTHORS[@]}"; do
             --test-dir="$TEST_DIR" \
             --positive-author="$AUTHOR_NORMALIZED" \
             --classifier-type="$MODEL" \
+            --n-jobs="$N_JOBS" \
             --results-inference="$BASE_DIR/results/inference/dummy.csv" \
             > "$BASE_DIR/results/outputs/output_${NAME_PATH}_${MODEL}.txt" 2>&1
     done
