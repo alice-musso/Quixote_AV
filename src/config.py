@@ -19,6 +19,8 @@ class ModelConfig:
     n_jobs: int = 64
     random_state: int = 0
     max_features: int = 5000
+    cache_path: str = "./data_preparation/.cache"
+    refresh_cache: bool = False
 
     @classmethod
     def from_args(cls):
@@ -35,6 +37,17 @@ class ModelConfig:
         parser.add_argument(
             "--hyperparams-save",
             default="../hyperparams/hyperparameters.pkl",
+        )
+        parser.add_argument(
+            "--cache-path",
+            default="./data_preparation/.cache",
+            help="Directory for spaCy processed-document cache files.",
+        )
+        parser.add_argument(
+            "--refresh-cache",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Regenerate processed-document cache from the current cleaned text.",
         )
         parser.add_argument("--classifier-type", choices=["lr", "svm"], default="lr")
         parser.add_argument(
@@ -61,7 +74,7 @@ class ModelConfig:
         parser.add_argument(
             "--skip-ablation",
             action=argparse.BooleanOptionalAction,
-            default=True,
+            default=False,
             help="Skip the topic-ablation step; use --no-skip-ablation to re-enable it.",
         )
         parser.add_argument(
@@ -99,6 +112,8 @@ class ModelConfig:
             skip_ablation=args.skip_ablation,
             skip_decision_changes=args.skip_decision_changes,
             n_jobs=args.n_jobs,
+            cache_path=args.cache_path,
+            refresh_cache=args.refresh_cache,
         )
         config.ensure_output_dirs()
         return config

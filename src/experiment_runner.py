@@ -26,6 +26,10 @@ class ExperimentOutputs:
     prediction_table: object
     ablation_table: object
     decision_change_table: object
+    book_report_path: Path
+    segment_report_path: Path
+    book_report: pd.DataFrame
+    segment_report: pd.DataFrame
 
 
 @dataclass
@@ -94,12 +98,24 @@ class QuixoteInferenceExperiment:
     def _load_corpora(self):
         from data_preparation.data_loader import binarize_corpus, load_corpus
 
+        cache_path = getattr(self.config, "cache_path", "./data_preparation/.cache")
+        refresh_cache = getattr(self.config, "refresh_cache", False)
         train_corpus = binarize_corpus(
-            load_corpus(self.config.train_dir, n_jobs=self.config.n_jobs),
+            load_corpus(
+                self.config.train_dir,
+                cache_path=cache_path,
+                n_jobs=self.config.n_jobs,
+                refresh_cache=refresh_cache,
+            ),
             positive_author=self.config.positive_author,
         )
         test_corpus = binarize_corpus(
-            load_corpus(self.config.test_dir, n_jobs=self.config.n_jobs),
+            load_corpus(
+                self.config.test_dir,
+                cache_path=cache_path,
+                n_jobs=self.config.n_jobs,
+                refresh_cache=refresh_cache,
+            ),
             positive_author=self.config.positive_author,
         )
         return LoadedCorpora(train_corpus=train_corpus, test_corpus=test_corpus)
@@ -136,6 +152,7 @@ class QuixoteInferenceExperiment:
             topic_documents,
             verifier_artifacts.feature_selection,
         )
+
         feature_ranking_artifacts = ablation_experiment.compute_feature_ranking(
             X=full_corpus_matrix,
             topic_labels=topic_labels,
@@ -505,9 +522,23 @@ class QuixoteInferenceExperiment:
             )
             print("\nDecision change table:")
             print(tables.decision_change_table.to_string(index=False))
+        from results import build_performance_reports
+
+        tables.book_report, tables.segment_report = build_performance_reports(
+            books=corpora.train_corpus,
+            target_author=self.config.positive_author,
+            evaluations={
+                "pre_ablation": pre_ablation_evaluation,
+                "post_ablation": post_ablation_evaluation,
+            },
+        )
         saved_results = self.result_writer.save_tables(tables)
 
         return ExperimentOutputs(
+            book_report_path=saved_results.book_report_csv_path,
+            segment_report_path=saved_results.segment_report_csv_path,
+            book_report=tables.book_report,
+            segment_report=tables.segment_report,
             score_path=saved_results.score_csv_path,
             results_path=saved_results.predictions_csv_path,
             ablation_path=saved_results.ablation_csv_path,

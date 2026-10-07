@@ -1,6 +1,7 @@
-from typing import List, Tuple
-import spacy
-from spacy.tokens import Doc
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from spacy.tokens import Doc
 
 
 class Segmentator:
@@ -14,7 +15,7 @@ class Segmentator:
         """
         self.min_tokens = min_tokens
 
-    def transform(self, doc: Doc):
+    def transform(self, doc: "Doc"):
         """
         Segments a document into chunks made of complete sentences, with an overall length >= min_tokens
 
@@ -60,4 +61,3 @@ class Segmentator:
                 segments.append(doc[start:end].as_doc())
 
         return segments
-

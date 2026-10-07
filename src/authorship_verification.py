@@ -95,6 +95,7 @@ class ClassificationMetrics:
 class VerificationEvaluation:
     books: ClassificationMetrics
     segments: ClassificationMetrics
+    predictions: np.ndarray
 
 
 @dataclass
@@ -416,4 +417,5 @@ class AuthorshipVerification:
         return VerificationEvaluation(
             books=books,
             segments=segments,
+            predictions=predictions,
         )

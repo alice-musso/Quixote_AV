@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import unicodedata
 
@@ -11,6 +11,8 @@ class ExperimentTables:
     prediction_table: pd.DataFrame
     ablation_table: pd.DataFrame
     decision_change_table: pd.DataFrame
+    book_report: pd.DataFrame = field(default_factory=pd.DataFrame)
+    segment_report: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 @dataclass
@@ -23,6 +25,59 @@ class SavedResults:
     predictions_json_path: Path
     ablation_json_path: Path
     decision_changes_json_path: Path
+    book_report_csv_path: Path
+    book_report_json_path: Path
+    segment_report_csv_path: Path
+    segment_report_json_path: Path
+
+
+def build_performance_reports(books, target_author, evaluations):
+    """Summarize held-out verifier predictions: full book first, then segments."""
+    book_columns = [
+        "title",
+        "actual_author",
+        "predicted_author_pre_ablation",
+        "predicted_author_post_ablation",
+    ]
+    book_rows = [
+        {"title": book.title, "actual_author": book.original_author}
+        for book in books
+    ]
+    segment_columns = [
+        "title",
+        "actual_author",
+        "total_segments",
+        "segment_predicted_target_pre_ablation",
+        "segment_predicted_not_target_pre_ablation",
+        "segment_predicted_target_post_ablation",
+        "segment_predicted_not_target_post_ablation",
+    ]
+    segment_rows = [
+        {
+            "title": book.title,
+            "actual_author": book.original_author,
+            "total_segments": len(book.segmented),
+        }
+        for book in books
+    ]
+    expected_rows = sum(1 + len(book.segmented) for book in books)
+    for phase, evaluation in evaluations.items():
+        predictions = evaluation.predictions
+        if len(predictions) != expected_rows:
+            raise ValueError("Predictions do not match the full-book and segment layout.")
+        offset = 0
+        for book_id, book in enumerate(books):
+            total = len(book.segmented)
+            predicted_target = bool(predictions[offset] == target_author)
+            segment_predictions = predictions[offset + 1:offset + 1 + total]
+            target_count = sum(label == target_author for label in segment_predictions)
+            book_rows[book_id][f"predicted_author_{phase}"] = (
+                target_author if predicted_target else f"Not{target_author}"
+            )
+            segment_rows[book_id][f"segment_predicted_target_{phase}"] = int(target_count)
+            segment_rows[book_id][f"segment_predicted_not_target_{phase}"] = int(total - target_count)
+            offset += 1 + total
+    return pd.DataFrame(book_rows, columns=book_columns), pd.DataFrame(segment_rows, columns=segment_columns)
 
 
 def build_score_table(author_score_table, model_selection_score):
@@ -76,6 +131,7 @@ def build_prediction_table(
     post_predictions,
     test_corpus,
 ):
+    """Export before/after predictions and posterior scores by manuscript."""
     pre_posteriors = _posterior_table(pre_predictions.score_table)
     post_posteriors = _posterior_table(post_predictions.score_table)
     manuscript_columns = _manuscript_columns(test_corpus)
@@ -83,8 +139,8 @@ def build_prediction_table(
     for author in pre_predictions.authors:
         author_rows = [
             ("pre_ablation_prediction", pre_predictions.predicted_table),
-            ("pre_ablation_score", pre_predictions.score_table),
             ("pre_ablation_posterior", pre_posteriors),
+            ("post_ablation_prediction", post_predictions.predicted_table),
             ("post_ablation_posterior", post_posteriors),
         ]
         for statistic, table in author_rows:
@@ -150,6 +206,13 @@ class ResultWriter:
         self.decision_changes_json_path = self.predictions_json_path.parent / "decision_changes.json"
         self.decision_changes_csv_path = self.predictions_json_path.parent / "decision_changes.csv"
 
+        stem = self.predictions_json_path.stem
+        directory = self.predictions_json_path.parent
+        self.book_report_csv_path = directory / f"{stem}_book_report.csv"
+        self.book_report_json_path = directory / f"{stem}_book_report.json"
+        self.segment_report_csv_path = directory / f"{stem}_segment_report.csv"
+        self.segment_report_json_path = directory / f"{stem}_segment_report.json"
+
     def save_tables(self, tables: ExperimentTables):
         tables.score_table.to_csv(self.score_csv_path, index=False)
         tables.prediction_table.to_csv(self.predictions_csv_path, index=False)
@@ -161,7 +224,16 @@ class ResultWriter:
         tables.ablation_table.to_json(self.ablation_json_path, orient="records", indent=4)
         tables.decision_change_table.to_json(self.decision_changes_json_path, orient="records", indent=4)
 
+        tables.book_report.to_csv(self.book_report_csv_path, index=False)
+        tables.book_report.to_json(self.book_report_json_path, orient="records", indent=4)
+        tables.segment_report.to_csv(self.segment_report_csv_path, index=False)
+        tables.segment_report.to_json(self.segment_report_json_path, orient="records", indent=4)
+
         return SavedResults(
+            book_report_csv_path=self.book_report_csv_path,
+            book_report_json_path=self.book_report_json_path,
+            segment_report_csv_path=self.segment_report_csv_path,
+            segment_report_json_path=self.segment_report_json_path,
             score_csv_path=self.score_csv_path,
             predictions_csv_path=self.predictions_csv_path,
             ablation_csv_path=self.ablation_csv_path,
